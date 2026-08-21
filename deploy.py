@@ -59,7 +59,9 @@ def send(host: str, local: str, remote: str) -> None:
 
 
 def ssh(host: str, command: str) -> None:
-    run(["ssh", "-4", "-t", host, command])
+    # LogLevel=QUIET drops ssh's own chatter ("Connection to ... closed.")
+    # while the remote side (sudo prompt included) still shows through
+    run(["ssh", "-4", "-t", "-o", "LogLevel=QUIET", host, command])
 
 
 def main(argv: list[str]) -> int:

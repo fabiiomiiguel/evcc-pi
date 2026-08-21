@@ -528,11 +528,12 @@ def backup_yaml(path: str, keep: int) -> str:
     # keep >= 1: with 0 the pruning below would delete the copy we just made,
     # and the rollback in cmd_renew would have nothing to restore from
     keep = max(1, keep)
-    dest = f"{path}.bak-{datetime.now():%Y%m%d-%H%M%S}"
+    folder = "/var/backups"     # Debian's home for exactly this kind of copy
+    os.makedirs(folder, exist_ok=True)
+    prefix = os.path.basename(path) + ".bak-"
+    dest = os.path.join(folder, f"{prefix}{datetime.now():%Y%m%d-%H%M%S}")
     shutil.copy2(path, dest)
     dbg(f"backup: {dest}")
-    folder = os.path.dirname(path) or "."
-    prefix = os.path.basename(path) + ".bak-"
     old = sorted((f for f in os.listdir(folder) if f.startswith(prefix)),
                  reverse=True)[keep:]
     for f in old:
@@ -640,7 +641,7 @@ def cmd_renew(cfg: dict, args, force: bool) -> int:
     except Exception:
         shutil.copy2(backup, cfg["EVCC_YAML"])
         raise
-    ok(f"tokens written (backup in {os.path.basename(backup)})")
+    ok(f"tokens written (backup in {backup})")
 
     if not args.no_restart:
         log("4/5  restarting evcc…")
