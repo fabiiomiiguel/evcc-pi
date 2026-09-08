@@ -48,6 +48,10 @@ To avoid depending on it, `install-stelloauth.py` installs the same helper on
 the Pi itself (Go + headless Chromium, listening on `127.0.0.1:8099` only) —
 see [Optional: local helper](#optional-local-helper).
 
+**Since September 2026 the local helper is required**: the public instance
+stopped publishing which `client_id` it uses per country, and the codes it
+issues can no longer be exchanged with evcc's client (`invalid_grant`).
+
 ## Install
 
 ```bash
@@ -291,8 +295,11 @@ If you would rather the password did not go through the third-party site:
 ./deploy.py --no-stelloauth   # undo and go back to the public site
 ```
 
-The installer points `STELLO_URL` at `http://127.0.0.1:8099`; `--no-stelloauth`
-sends it back to the public site and removes the service, the binary and chromium.
+The installer creates two services: `stelloauth-browser` (the distro chromium,
+headless, exposing CDP on `127.0.0.1:9222` — stelloauth does not launch a
+browser itself) and `stelloauth` (metrics on `127.0.0.1:8098`, since 9090 is
+cockpit's). It points `STELLO_URL` at `http://127.0.0.1:8099`; `--no-stelloauth`
+sends it back to the public site and removes the services, the binary and chromium.
 
 Measured cost on a **Pi 3B+ (903 MB RAM)**: ~280 MB of disk for chromium, ~60 s
 per login, ~630 MB RAM peak (no OOM, but tight). It works — it is just a lot of

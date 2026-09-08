@@ -74,6 +74,9 @@ BRAND_INFO = {
     "ds":      ("https://idpcvs.driveds.com", "clientsB2CDS", "mymdssdk"),
 }
 
+STELLO_CONFIGS_URL = ("https://raw.githubusercontent.com/tamcore/stelloauth/"
+                      "master/internal/app/configs.json")
+
 # stelloauth brand -> evcc slug
 BRAND_SLUG = {
     "MyPeugeot": "peugeot",
@@ -345,6 +348,13 @@ def stello_configs(cfg: dict) -> dict:
             raise Fail(f"the local stelloauth ({host}) is not answering — "
                        "check 'systemctl status stelloauth'")
         raise Fail(f"could not fetch {host}/configs")
+    if not any("client_id" in c for b in body.values()
+               for c in b.get("configs", {}).values()):
+        # the public service stopped exposing client ids (Sep 2026); the
+        # file it embeds is public in the repo and the mapping is stable
+        status, body = http_json(STELLO_CONFIGS_URL, timeout=30)
+        if status != 200 or not body:
+            raise Fail(f"could not fetch {STELLO_CONFIGS_URL}")
     return body
 
 
@@ -412,7 +422,8 @@ def get_oauth_code(cfg: dict, country: str) -> str:
         raise Fail(f"could not reach {url}: {e}") from None
 
     with resp:
-        if "text/event-stream" not in (resp.headers.get("Content-Type") or ""):
+        ctype = resp.headers.get("Content-Type") or ""
+        if "text/event-stream" not in ctype and "ndjson" not in ctype:
             return _oauth_code_from_json(resp.read(), resp.status)
         return _oauth_code_from_sse(resp)
 
@@ -431,17 +442,23 @@ def _oauth_code_from_json(raw: bytes, status: int) -> str:
 
 
 def _oauth_code_from_sse(resp) -> str:
-    """Consumes the event stream and returns the code."""
+    """Consumes the event stream (SSE "data:" lines or NDJSON) and returns the code."""
     last = ""
     for raw in resp:
         line = raw.decode("utf-8", "replace").strip()
-        if not line.startswith("data:"):
-            continue
+        if line.startswith("data:"):
+            line = line[5:].strip()
         try:
-            ev = json.loads(line[5:].strip())
+            ev = json.loads(line)
         except ValueError:
             continue
         kind, msg = ev.get("type"), ev.get("message", "")
+        if kind == "result":                       # public service, Sep 2026
+            data = ev.get("data") or {}
+            if data.get("status") in ("success", "ok"):
+                kind, ev = "success", data
+            else:
+                kind, msg = "error", data.get("message") or data.get("code", "")
         if kind == "success":
             if _TTY and last:
                 print("\r" + " " * (len(last) + 6) + "\r", end="")
@@ -484,8 +501,13 @@ def exchange_code(slug: str, country: str, code: str,
     if not body:
         raise Fail(f"no answer from the token endpoint (HTTP {status})")
     if body.get("error"):
+        hint = ""
+        if body["error"] == "invalid_grant":
+            hint = ("\n  the code was issued to a different client than evcc's; "
+                    "the public stelloauth no longer says which one it uses — "
+                    "run the local one: ./deploy.py --stelloauth check")
         raise Fail(f"code exchange failed: {body['error']} — "
-                   f"{body.get('error_description', '')}")
+                   f"{body.get('error_description', '')}{hint}")
     access, refresh = body.get("access_token"), body.get("refresh_token")
     if not access or not refresh:
         raise Fail(f"answer without tokens: {str(body)[:200]}")

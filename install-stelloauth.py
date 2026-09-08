@@ -34,6 +34,11 @@ REPO = "tamcore/stelloauth"
 FALLBACK_VERSION = "v0.2.1"
 BIN = "/usr/local/bin/stelloauth"
 UNIT = "/etc/systemd/system/stelloauth.service"
+BROWSER_UNIT = "/etc/systemd/system/stelloauth-browser.service"
+CDP_PORT = 9222
+# headless Chromium announces itself as "HeadlessChrome"; the login page rejects it
+USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
 ADDR, PORT = "127.0.0.1", 8099
 CONF = "/etc/evcc-psa-token.conf"
 PUBLIC_URL = "https://stelloauth.tollet.me"
@@ -88,8 +93,9 @@ def point_at(url: str) -> None:
 
 def uninstall() -> int:
     print("1/3  stopping the service...")
-    run(["systemctl", "disable", "--now", "stelloauth.service"], check=False)
-    for f in (UNIT, BIN):
+    run(["systemctl", "disable", "--now", "stelloauth.service",
+         "stelloauth-browser.service"], check=False)
+    for f in (UNIT, BROWSER_UNIT, BIN):
         if os.path.exists(f):
             os.remove(f)
     run(["systemctl", "daemon-reload"], check=False)
@@ -177,30 +183,56 @@ def install() -> int:
         os.chmod(BIN, 0o755)
     ok(f"installed {BIN}")
 
-    # ---- 3. service
-    print("3/4  creating the systemd service...")
+    # ---- 3. services: stelloauth does not launch a browser itself, it drives
+    # one already listening on CDP (upstream uses a CloakBrowser container;
+    # on a Pi the distro chromium in headless mode does the job)
+    print("3/4  creating the systemd services...")
+    hardening = """DynamicUser=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+Restart=on-failure
+RestartSec=5
+"""
+    with open(BROWSER_UNIT, "w", encoding="utf-8") as fh:
+        fh.write(f"""[Unit]
+Description=headless chromium for stelloauth (CDP on {ADDR}:{CDP_PORT})
+
+[Service]
+ExecStart={exe} --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+    --no-first-run --user-data-dir=/tmp/profile \
+    --remote-debugging-address={ADDR} --remote-debugging-port={CDP_PORT} \
+    --user-agent="{USER_AGENT}"
+Environment=HOME=/tmp
+# on a Pi with little RAM: tell the kernel to reclaim before it kills
+MemoryHigh=600M
+{hardening}
+[Install]
+WantedBy=multi-user.target
+""")
     with open(UNIT, "w", encoding="utf-8") as fh:
         fh.write(f"""[Unit]
 Description=stelloauth — Stellantis OAuth helper (local, {ADDR} only)
 Documentation=https://github.com/{REPO}
-After=network-online.target
+After=network-online.target stelloauth-browser.service
 Wants=network-online.target
+Requires=stelloauth-browser.service
 
 [Service]
 ExecStart={BIN}
 Environment=HTTP_ADDRESS={ADDR}
 Environment=PORT={PORT}
-# chromedp needs a HOME and a writable /tmp
-Environment=HOME=/tmp
-Environment=XDG_CONFIG_HOME=/tmp
-Environment=XDG_CACHE_HOME=/tmp
+Environment=CLOAK_CDP_URL=http://{ADDR}:{CDP_PORT}
+# prometheus metrics default to 0.0.0.0:9090, which is cockpit's port here
+Environment=METRICS_ADDRESS={ADDR}
+Environment=METRICS_PORT={PORT - 1}
 DynamicUser=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 NoNewPrivileges=yes
-# on a Pi with little RAM: tell the kernel to reclaim before it kills
-MemoryHigh=500M
+MemoryHigh=200M
 Restart=on-failure
 RestartSec=5
 
@@ -208,12 +240,12 @@ RestartSec=5
 WantedBy=multi-user.target
 """)
     run(["systemctl", "daemon-reload"])
-    run(["systemctl", "enable", "--now", "stelloauth.service"])
-    time.sleep(2)
-    if run(["systemctl", "is-active", "--quiet", "stelloauth.service"],
-           check=False).returncode != 0:
-        run(["journalctl", "-u", "stelloauth", "-n", "20", "--no-pager"], check=False)
-        raise Failed("the stelloauth service did not start")
+    run(["systemctl", "enable", "--now", "stelloauth-browser.service", "stelloauth.service"])
+    time.sleep(3)
+    for unit in ("stelloauth-browser", "stelloauth"):
+        if run(["systemctl", "is-active", "--quiet", unit], check=False).returncode != 0:
+            run(["journalctl", "-u", unit, "-n", "20", "--no-pager"], check=False)
+            raise Failed(f"the {unit} service did not start")
     ok(f"stelloauth running on http://{ADDR}:{PORT} (local only)")
 
     # ---- 4. wiring
