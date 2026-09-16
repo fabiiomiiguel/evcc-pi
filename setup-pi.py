@@ -356,13 +356,12 @@ def sec_caddy(c: Ctx) -> None:
     info("writing /etc/caddy/Caddyfile...")
     c.write("/etc/caddy/Caddyfile", f"""{{
   email {c['CADDY_EMAIL']}
-  auto_https disable_redirects
   skip_install_trust
-}}
-
-# Redirect every HTTP request to HTTPS
-http:// {{
-  redir https://{{host}}{{uri}} permanent
+  # Safari 27 tries WebSockets over HTTP/3 and Cockpit never connects;
+  # keep TCP-only so the upgrade goes through HTTP/1.1.
+  servers {{
+    protocols h1 h2
+  }}
 }}
 
 (common) {{
@@ -386,8 +385,6 @@ http:// {{
   reverse_proxy 127.0.0.1:7070 {{
     header_up Host {{host}}
     header_up X-Real-IP {{remote}}
-    header_up X-Forwarded-For {{remote}}
-    header_up X-Forwarded-Proto {{scheme}}
   }}
 }}
 
@@ -439,6 +436,7 @@ http:// {{
     ok("Cockpit: origins allowed (proxy, IP and mDNS)")
 
     info("validating and reloading Caddy...")
+    c.run(["caddy", "fmt", "--overwrite", "/etc/caddy/Caddyfile"])
     c.run(["caddy", "validate", "--config", "/etc/caddy/Caddyfile"])
 
     # The image's WiFi portal (comitup-web) sits on port 80, which Caddy needs
