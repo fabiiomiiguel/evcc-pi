@@ -161,6 +161,40 @@ The reliable signal is in evcc's `identity.go` — when the refresh fails with
 Treating 401 as a failure made the timer run a full renewal every single day for
 no reason — and every renewal sends the account password to the login service.
 
+## NucBox: Orca dev server
+
+`nucbox/` records a second machine: an Ubuntu x86_64 box running [Orca](https://onorca.dev)'s
+headless runtime (`orca-ide serve`) behind Caddy, plus a mirror of `~/Projects`. Values come
+from the same `.env` (`NUCBOX`, `ORCA_HOST`, `ORCA_PORT`, `LAN_CIDR`; see `.env.example`).
+
+```bash
+./nucbox/push.sh                  # Mac: copy nucbox/ to ~/nucbox on the box, with only those variables
+# then on the box, in ~/nucbox:
+./install-orca.sh                 # renders orca.service into the user unit, enables linger, starts it
+./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
+./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
+./nucbox/sync-projects.sh         # Mac: mirror ~/Projects, fix worktree links
+```
+
+- **Pairing URL** is a secret; read it on the box and never commit it:
+  `journalctl --user -u orca -o cat | grep "Pairing URL"`.
+- **Caddy** only touches the `@orca` matcher and its `handle`, before the catch-all `handle {`.
+  It validates as the `caddy` user with the service's environment file loaded, keeps
+  `Caddyfile.bak.<date>`, restarts, and rolls back if Caddy does not come up. caddy-security's
+  store (`/var/lib/caddy/authcrunch`) must be owned by `caddy`. The login-protected Everon site
+  is described in the slack repo's `electron/README.md`.
+- **Measured: orcad is broken** in orca-ide 1.4.224 (missing module), so `serve` falls back
+  to Electron, which works headless. It binds `0.0.0.0` and has no bind option.
+- **Measured: tailscale comes before ufw.** Its `ts-input` chain is jumped first in `INPUT`
+  and accepts everything on `tailscale0`, so `ufw deny in on tailscale0` does nothing (the port
+  still answered over the tailnet). The block is a `*raw` table rule prepended to
+  `/etc/ufw/before.rules` and `before6.rules`; afterwards tailnet and LAN get no answer on the
+  port and Caddy still does.
+- Claude Code is the only agent (`~/.local/bin/claude`); log in on the box yourself.
+- `sync-projects.sh` excludes `node_modules`, `.nuxt`, `.output`, `.next`, `.turbo`, `.cache`,
+  rewrites the Mac's home to the box's in `.git/worktrees/*/gitdir` and worktree `.git` files,
+  sets git's `core.filemode false` and copies `~/.config/git/ignore`.
+
 ## Tuning the control loop
 
 Measured on a Pi 3B+ against a Huawei EMMA, with evcc stopped so the probe
