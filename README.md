@@ -237,10 +237,14 @@ for the message to reach the notification centre.
   to Electron, which works headless. It binds `0.0.0.0` and has no bind option.
 - **Measured: tailscale comes before ufw.** Its `ts-input` chain is jumped first in `INPUT`
   and accepts everything on `tailscale0`, so `ufw deny in on tailscale0` does nothing (the port
-  still answered over the tailnet). The block is a `*raw` table rule prepended to
-  `/etc/ufw/before.rules` and `before6.rules`; afterwards tailnet and LAN get no answer on the
+  still answered over the tailnet). `orca-tailnet-block.sh` drops the port in the raw table from
+  `/etc/ufw/before.init` (marked `orca-tailnet` section; other content is kept, a non-shell file is
+  refused), which ufw runs on `start`/`stop`/`flush-all`. A `*raw` block in `before.rules` is not
+  used: `ufw reload` re-applies those files without flushing, so it added one more copy per reload.
+  The script also removes an older block from `before.rules`/`before6.rules` and duplicate live
+  rules, then prints the raw table (one rule each). Afterwards tailnet and LAN get no answer on the
   port and Caddy still does.
-- Changing `ORCA_PORT` later: remove the old `orca-tailnet` rule from both before.rules files by hand first (the marker ignores the port).
+- Changing `ORCA_PORT` later: delete the `orca-tailnet` section from `/etc/ufw/before.init` by hand first (the marker ignores the port).
 
 ### Claude Code and GitHub on the box
 
