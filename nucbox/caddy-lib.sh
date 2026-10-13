@@ -27,7 +27,7 @@ apply_caddyfile() {
     tail -5 "$log"; rm -f "$log" "$old" "$new"; sudo rm -f "$cand"; die "invalid: nothing was changed"
   fi
   rm -f "$log"
-  bak="$LIVE.bak.$(date +%Y%m%d-%H%M%S)"
+  bak="$LIVE.bak"
   sudo cp "$LIVE" "$bak"; sudo mv "$cand" "$LIVE"; rm -f "$old" "$new"
   sudo systemctl restart caddy || true
   sleep 2

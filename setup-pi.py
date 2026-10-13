@@ -508,12 +508,13 @@ def refresh_stale_certs(c: Ctx) -> None:
     for name, span in stale:
         info(f"{name} is only valid for {span:.1f} days, policy asks for {wanted:.0f}")
 
-    backup = f"/var/backups/caddy-certs/{datetime.now():%Y%m%d-%H%M%S}"
+    backup = "/var/backups/caddy-certs"
     if c.dry:
         print(f"    -> would back up {CADDY_CERT_STORE} to {backup} and remove it")
         print("    $ systemctl restart caddy")
         return
     os.makedirs(os.path.dirname(backup), exist_ok=True)
+    shutil.rmtree(backup, ignore_errors=True)
     shutil.copytree(CADDY_CERT_STORE, backup)
     shutil.rmtree(CADDY_CERT_STORE)
     c.run(["systemctl", "restart", "caddy"], check=False)

@@ -101,7 +101,7 @@ python3 setup-pi.py --list
 | `/usr/local/bin/evcc-psa-token` | the tool (Python 3, stdlib only), runs as root   |
 | `/etc/evcc-psa-token.conf`      | account + MyPeugeot password (0600, root only)   |
 | `/etc/evcc.yaml`                | where the tokens get written                     |
-| `/etc/evcc.yaml.bak-*`          | backups (keeps the last 5)                       |
+| `/var/backups/evcc.yaml.bak`    | backup of the last run (overwritten each time)   |
 | `evcc-psa-token.timer`          | daily check, if `install-timer` was run           |
 | `/usr/local/bin/evcc-watch`     | watches the EMMA and the OCPP session (1 min timer) |
 
@@ -205,7 +205,7 @@ challenge and puts a login page in front of Everon. Values come from the same `.
   own matcher and handle (and, for the login, the global `security` block), so other sites stay as they are.
 - Every script validates as the `caddy` user with the service's environment loaded (`setpriv`; a plain
   `caddy validate` as root misses the env and the `caddy` user's permissions), keeps
-  `Caddyfile.bak.<date>`, restarts, and rolls back if Caddy does not come up. An unchanged Caddyfile
+  one `Caddyfile.bak`, restarts, and rolls back if Caddy does not come up. An unchanged Caddyfile
   (after `caddy fmt`) exits without a restart.
 - Measured: caddy-security's store `/var/lib/caddy/authcrunch` must be owned by `caddy`;
   root-owned files there stop the service (`lstat` permission denied).
@@ -385,7 +385,7 @@ that — but only for certificates that actually predate the policy:
 
 Wiping the store on every run would mint new certificates each time, and a new
 browser warning with them — which is the very thing the long lifetime is meant
-to stop. The old certificates are kept under `/var/backups/caddy-certs/`.
+to stop. The old certificates are kept in `/var/backups/caddy-certs/` (replaced on each wipe).
 
 One exception per browser per year, instead of two per day. Trusting the root
 in each device's OS keychain would remove the warning altogether, at the cost

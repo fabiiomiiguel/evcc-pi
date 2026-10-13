@@ -33,7 +33,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
 
 VERSION = "2.1.0"
 CONF_PATH = os.environ.get("EVCC_PSA_CONF", "/etc/evcc-psa-token.conf")
@@ -100,7 +99,6 @@ DEFAULTS = {
     "EVCC_API": "http://localhost:7070",
     "STELLO_URL": "https://stelloauth.tollet.me",
     "PREFERRED_COUNTRIES": "ES FR IT DE GB",
-    "KEEP_BACKUPS": "5",
 }
 
 
@@ -202,8 +200,8 @@ def load_conf(path: str) -> dict:
 
 def write_conf(path: str, cfg: dict) -> None:
     # Every key, not just the ones init asks about — otherwise changing the
-    # password would silently drop a customised EVCC_API or KEEP_BACKUPS and
-    # the tool would quietly fall back to defaults.
+    # password would silently drop a customised EVCC_API and the tool would
+    # quietly fall back to defaults.
     first = ["BRAND", "ACCOUNT_COUNTRY", "EMAIL", "PASSWORD", "VEHICLE"]
     order = first + [k for k in DEFAULTS if k not in first]
     lines = ["# evcc-psa-token configuration — root-readable only (0600)"]
@@ -546,23 +544,12 @@ def patch_yaml(path: str, vehicle: str, access: str, refresh: str) -> None:
     os.replace(tmp, path)
 
 
-def backup_yaml(path: str, keep: int) -> str:
-    # keep >= 1: with 0 the pruning below would delete the copy we just made,
-    # and the rollback in cmd_renew would have nothing to restore from
-    keep = max(1, keep)
+def backup_yaml(path: str) -> str:
     folder = "/var/backups"     # Debian's home for exactly this kind of copy
     os.makedirs(folder, exist_ok=True)
-    prefix = os.path.basename(path) + ".bak-"
-    dest = os.path.join(folder, f"{prefix}{datetime.now():%Y%m%d-%H%M%S}")
+    dest = os.path.join(folder, os.path.basename(path) + ".bak")
     shutil.copy2(path, dest)
     dbg(f"backup: {dest}")
-    old = sorted((f for f in os.listdir(folder) if f.startswith(prefix)),
-                 reverse=True)[keep:]
-    for f in old:
-        try:
-            os.remove(os.path.join(folder, f))
-        except OSError:
-            pass
     return dest
 
 
@@ -653,11 +640,7 @@ def cmd_renew(cfg: dict, args, force: bool) -> int:
         return 0
 
     log(f"3/5  updating {cfg['EVCC_YAML']}…")
-    try:
-        keep = int(cfg["KEEP_BACKUPS"])
-    except (TypeError, ValueError):
-        keep = int(DEFAULTS["KEEP_BACKUPS"])
-    backup = backup_yaml(cfg["EVCC_YAML"], keep)
+    backup = backup_yaml(cfg["EVCC_YAML"])
     try:
         patch_yaml(cfg["EVCC_YAML"], cfg["VEHICLE"], access, refresh)
     except Exception:
