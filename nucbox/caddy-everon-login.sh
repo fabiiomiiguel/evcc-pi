@@ -13,7 +13,7 @@ set -euo pipefail
 # $1 = current Caddyfile, $2 = where to write the result; $PW is the identity's `bcrypt:<cost>:<hash>`
 render() {
   local mid; mid=$(mktemp)
-  python3 "$HERE/caddy_edit.py" security "$1" "$mid" <<EOF
+  python3 "$HERE/caddy_edit.py" security "$1" "$mid" <<EOF || { rm -f "$mid"; return 1; }
 	security {
 		local identity store localdb {
 			realm local
@@ -38,7 +38,7 @@ render() {
 		}
 	}
 EOF
-  python3 "$HERE/caddy_edit.py" site "$mid" "$2" everon <<EOF
+  python3 "$HERE/caddy_edit.py" site "$mid" "$2" everon <<EOF || { rm -f "$mid"; return 1; }
 	@everon host $EVERON_HOST
 	handle @everon {
 		@outsiders not remote_ip $TAILNET_CIDR $LAN_CIDR

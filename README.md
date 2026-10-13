@@ -200,8 +200,9 @@ challenge and puts a login page in front of Everon. Values come from the same `.
   Fill the token with `sudoedit`; neither value is ever copied elsewhere.
 - Shape of the Caddyfile (`Caddyfile.template`): global `acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}`,
   one `*.CADDY_DOMAIN` site with a `@name host ...` matcher and `handle @name { ... }` per service, and
-  a catch-all `handle { respond ... 404 }` last. The three `caddy-*.sh` scripts only touch their own
-  matcher and handle (and, for the login, the global `security` block), so other sites stay as they are.
+  a catch-all `handle { respond ... 404 }` last. `caddy-install.sh` replaces the whole file, only
+  when it is the package default (it refuses otherwise); the other two `caddy-*.sh` scripts only touch their
+  own matcher and handle (and, for the login, the global `security` block), so other sites stay as they are.
 - Every script validates as the `caddy` user with the service's environment loaded (`setpriv`; a plain
   `caddy validate` as root misses the env and the `caddy` user's permissions), keeps
   `Caddyfile.bak.<date>`, restarts, and rolls back if Caddy does not come up. An unchanged Caddyfile
@@ -244,7 +245,7 @@ for the message to reach the notification centre.
   The script also removes an older block from `before.rules`/`before6.rules` and duplicate live
   rules, then prints the raw table (one rule each). Afterwards tailnet and LAN get no answer on the
   port and Caddy still does.
-- Changing `ORCA_PORT` later: delete the `orca-tailnet` section from `/etc/ufw/before.init` by hand first (the marker ignores the port).
+- Changing `ORCA_PORT` later: no hand edit needed, the script replaces its `orca-tailnet` section (BEGIN/END markers). The old port's live raw rule stays until a reboot, or run `sudo /etc/ufw/before.init stop` before the change (harmless).
 
 ### Claude Code and GitHub on the box
 

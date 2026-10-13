@@ -12,6 +12,7 @@ baseline() { sed "s|@CADDY_DOMAIN@|$1|g" "$HERE/Caddyfile.template"; }
 # installs, restarts and rolls back if Caddy does not come up. Both files are removed.
 apply_caddyfile() {
   local old=$1 new=$2 cand=/etc/caddy/Caddyfile.candidate log bak
+  [[ -s $new ]] || { rm -f "$old" "$new"; die "the new Caddyfile is empty; nothing was changed"; }
   caddy fmt --overwrite "$old" >/dev/null 2>&1 || true
   caddy fmt --overwrite "$new" >/dev/null 2>&1 || true
   if diff -q "$old" "$new" >/dev/null; then

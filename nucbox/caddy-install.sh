@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Prepares Caddy for the sites in this folder: the Cloudflare DNS and caddy-security modules, the
 # service's environment file, the store directory, and a baseline wildcard Caddyfile for CADDY_DOMAIN
-# when the live one has none. Safe to run again. The Cloudflare token is put in by you (sudoedit).
+# when the live one has none, written only over the package default (refused otherwise). Safe to run
+# again. The Cloudflare token is put in by you (sudoedit).
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
 . "$(dirname "$0")/caddy-lib.sh"
