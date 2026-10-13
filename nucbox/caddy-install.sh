@@ -11,8 +11,15 @@ STORE=/var/lib/caddy/authcrunch
 sudo -v
 mods=$(caddy list-modules)
 if ! grep -qx security <<<"$mods" || ! grep -qx dns.providers.cloudflare <<<"$mods"; then
-  say "adding the modules (the package manager's caddy.default stays as it was)..."
+  # the package owns /usr/bin/caddy: divert it, so an apt upgrade replaces caddy.default, not the custom build
+  if ! dpkg-divert --list | grep -q '/usr/bin/caddy.default'; then
+    sudo dpkg-divert --local --rename --divert /usr/bin/caddy.default --add /usr/bin/caddy
+    sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.default 10
+  fi
+  say "adding the modules (builds /usr/bin/caddy.custom)..."
   sudo caddy add-package github.com/caddy-dns/cloudflare github.com/greenpau/caddy-security
+  [[ $(readlink -f /usr/bin/caddy) == /usr/bin/caddy.custom ]] ||
+    sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.custom 50
 fi
 
 if ! sudo test -f "$ENVF"; then sudo install -m 600 -o root -g root "$HERE/cloudflare.env.example" "$ENVF"; fi
@@ -29,6 +36,8 @@ sudo chown -R caddy:caddy "$STORE"
 
 if sudo grep -qE "^\*\.${CADDY_DOMAIN//./\\.} \{" "$LIVE"; then
   say "the Caddyfile already has *.$CADDY_DOMAIN; add sites with the other caddy-*.sh scripts."
+elif ! sudo grep -q 'root \* /usr/share/caddy' "$LIVE"; then
+  die "the live Caddyfile is not the package default; add the *.$CADDY_DOMAIN site from Caddyfile.template by hand"
 else
   old=$(mktemp); new=$(mktemp)
   sudo cat "$LIVE" >"$old"; baseline "$CADDY_DOMAIN" >"$new"

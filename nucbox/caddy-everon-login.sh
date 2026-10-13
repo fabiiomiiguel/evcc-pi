@@ -77,7 +77,7 @@ sudo cat "$LIVE" >"$old"
 PW=$(grep -oE 'password "bcrypt:[0-9]+:[^"]+"' "$old" | head -1 | cut -d'"' -f2 || true)
 if [[ -z $PW ]]; then
   say "new password for $EVERON_USER:"
-  hash=$(caddy hash-password)
+  hash=$(caddy hash-password | tail -1)
   PW="bcrypt:$(cut -d'$' -f3 <<<"$hash"):$hash"
 fi
 render "$old" "$new" || { rm -f "$old" "$new"; exit 1; }

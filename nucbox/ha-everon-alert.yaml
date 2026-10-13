@@ -7,7 +7,7 @@ triggers:
   - trigger: webhook
     webhook_id: replace-with-a-long-random-id
     allowed_methods: [POST]
-    local_only: false # the default (true) refuses requests that arrive through a reverse proxy
+    local_only: false # per the HA docs, webhooks are otherwise reachable only from the local network
 actions:
   - action: notify.send_message
     target:

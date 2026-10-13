@@ -35,9 +35,11 @@ def put_site(src, name, block):
 
 
 def put_security(src, block):
-    if not src.lstrip().startswith('{'):
+    m = re.match(r'(?:[ \t]*(?:#[^\n]*)?\n)*(\{)', src)
+    if not m:
         src = '{\n}\n\n' + src
-    g0 = src.index('{')
+        m = re.match(r'\{', src)
+    g0 = m.end(m.lastindex or 0) - 1
     g1 = block_end(src, g0)
     glob = src[g0:g1]
     m = re.search(r'^\tsecurity \{', glob, re.M)
