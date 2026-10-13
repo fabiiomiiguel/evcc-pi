@@ -169,11 +169,11 @@ from the same `.env` (`NUCBOX`, `ORCA_HOST`, `ORCA_PORT`, `LAN_CIDR`; see `.env.
 
 ```bash
 ./nucbox/push.sh                  # Mac: copy nucbox/ to ~/nucbox on the box, with only those variables
+./nucbox/sync-projects.sh         # Mac: mirror ~/Projects (copy, no deletes), fix worktree links
 # then on the box, in ~/nucbox:
 ./install-orca.sh                 # renders orca.service into the user unit, enables linger, starts it
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
 ./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
-./nucbox/sync-projects.sh         # Mac: mirror ~/Projects, fix worktree links
 ```
 
 - **Pairing URL** is a secret; read it on the box and never commit it:
@@ -190,6 +190,7 @@ from the same `.env` (`NUCBOX`, `ORCA_HOST`, `ORCA_PORT`, `LAN_CIDR`; see `.env.
   still answered over the tailnet). The block is a `*raw` table rule prepended to
   `/etc/ufw/before.rules` and `before6.rules`; afterwards tailnet and LAN get no answer on the
   port and Caddy still does.
+- Changing `ORCA_PORT` later: remove the old `orca-tailnet` rule from both before.rules files by hand first (the marker ignores the port).
 - Claude Code is the only agent (`~/.local/bin/claude`); log in on the box yourself.
 - `sync-projects.sh` excludes `node_modules`, `.nuxt`, `.output`, `.next`, `.turbo`, `.cache`,
   rewrites the Mac's home to the box's in `.git/worktrees/*/gitdir` and worktree `.git` files,

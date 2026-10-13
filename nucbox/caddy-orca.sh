@@ -35,6 +35,7 @@ def block_end(text, start):
 m = re.search(r'^\t@orca host [^\n]*\n', src, re.M)
 if m:
     h = re.search(r'^\thandle @orca \{', src[m.end():], re.M)
+    if not h: sys.exit('found `@orca host` without its `handle @orca`: fix the Caddyfile by hand')
     src = src[:m.start()] + site + src[block_end(src, m.end() + h.start()):]
 else:
     c = re.search(r'^\thandle \{', src, re.M)
@@ -46,21 +47,22 @@ PY
 
 if [[ ${1:-} == --print ]]; then
   old=$(mktemp); new=$(mktemp)
-  printf '%s\n' '{' '	email admin@example.com' '}' 'example.com {' '	handle {' '		respond "ok"' '	}' '}' >"$old"
+  printf '%s\n' '{' '	email admin@example.com' '}' '*.example.com {' '	handle {' '		respond "ok"' '	}' '}' >"$old"
   render "$old" "$new"; cat "$new"; rm -f "$old" "$new"; exit 0
 fi
 
 sudo -v
 old=$(mktemp); new=$(mktemp)
 sudo cat "$LIVE" >"$old"
-render "$old" "$new"
+render "$old" "$new" || { rm -f "$old" "$new"; exit 1; }
 caddy fmt --overwrite "$new" >/dev/null 2>&1 || true
-if diff -q "$old" "$new" >/dev/null; then say "the Caddyfile is already like this; nothing to change."; else echo "--- changes:"; diff "$old" "$new" || true; echo "---"; fi
+if diff -q "$old" "$new" >/dev/null; then rm -f "$old" "$new"; say "the Caddyfile is already like this; nothing to change."; exit 0; fi
+echo "--- changes:"; diff "$old" "$new" || true; echo "---"
 
 say "validating as the caddy user, with the service's environment..."
 sudo install -m 644 "$new" /etc/caddy/Caddyfile.candidate
 if ! sudo bash -c "set -a; . '$ENVF'; HOME=/var/lib/caddy exec setpriv --reuid=caddy --regid=caddy --init-groups caddy validate --config /etc/caddy/Caddyfile.candidate" >/tmp/caddy-validate.log 2>&1; then
-  tail -5 /tmp/caddy-validate.log; sudo rm -f /etc/caddy/Caddyfile.candidate; die "invalid: nothing was changed"
+  tail -5 /tmp/caddy-validate.log; sudo rm -f /etc/caddy/Caddyfile.candidate "$old" "$new"; die "invalid: nothing was changed"
 fi
 BAK="$LIVE.bak.$(date +%Y%m%d-%H%M%S)"
 sudo cp "$LIVE" "$BAK"; sudo mv /etc/caddy/Caddyfile.candidate "$LIVE"; rm -f "$new" "$old"
