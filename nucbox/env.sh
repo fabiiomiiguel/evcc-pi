@@ -1,10 +1,12 @@
 # sourced by the nucbox scripts: fills variables not already in the environment from .env (next to
-# them, or in the repo root), then defaults.
+# them, or in the repo root), then defaults. A name .env lacks stays unset.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for f in "$here/.env" "$here/../.env"; do
   [[ -f $f ]] || continue
-  for n in NUCBOX ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR PROJECTS_DIR; do
-    [[ -n ${!n:-} ]] || export "$n=$(set +u; . "$f"; printf %s "${!n:-}")"
+  for n in NUCBOX ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR PROJECTS_DIR CADDY_DOMAIN EVERON_HOST EVERON_USER; do
+    [[ -n ${!n:-} ]] && continue
+    v=$(set +u; . "$f"; printf %s "${!n:-}")
+    [[ -z $v ]] || export "$n=$v"
   done
   break
 done

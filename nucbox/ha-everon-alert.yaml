@@ -1,0 +1,18 @@
+# Home Assistant automation: Everon's alertUrl (https://<ha-host>/api/webhook/<webhook_id>) -> a
+# phone notification. Replace webhook_id with a long random string (the URL is the credential) and
+# notify.<phone> with your phone's notify entity.
+alias: Everon alert
+description: Everon POSTs {"message": "Everon: ..."} on every [error] and every workspace signed out
+triggers:
+  - trigger: webhook
+    webhook_id: replace-with-a-long-random-id
+    allowed_methods: [POST]
+    local_only: false # the default (true) refuses requests that arrive through a reverse proxy
+actions:
+  - action: notify.send_message
+    target:
+      entity_id: notify.replace_with_your_phone
+    data:
+      title: Everon
+      message: "{{ trigger.json.message }}"
+mode: queued

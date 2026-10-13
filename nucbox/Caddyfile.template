@@ -1,0 +1,15 @@
+{
+	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+}
+
+(common) {
+	encode zstd gzip
+}
+
+*.@CADDY_DOMAIN@ {
+	import common
+
+	handle {
+		respond "Unknown service" 404
+	}
+}

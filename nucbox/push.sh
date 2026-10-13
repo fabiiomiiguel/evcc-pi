@@ -8,6 +8,8 @@ set -euo pipefail
 : "${NUCBOX:?set NUCBOX in .env}"
 here=$(cd "$(dirname "$0")" && pwd)
 ssh "$NUCBOX" 'mkdir -p ~/nucbox'
-scp -q "$here"/*.sh "$here"/orca.service "$NUCBOX:nucbox/"
-printf '%s=%q\n' ORCA_HOST "$ORCA_HOST" ORCA_PORT "$ORCA_PORT" LAN_CIDR "$LAN_CIDR" TAILNET_CIDR "$TAILNET_CIDR" |
+scp -q "$here"/* "$NUCBOX:nucbox/"
+for n in ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR CADDY_DOMAIN EVERON_HOST EVERON_USER; do
+  [[ -z ${!n:-} ]] || printf '%s=%q\n' "$n" "${!n}"
+done |
   ssh "$NUCBOX" 'umask 077; cat > ~/nucbox/.env'

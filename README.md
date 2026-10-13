@@ -161,28 +161,73 @@ The reliable signal is in evcc's `identity.go` — when the refresh fails with
 Treating 401 as a failure made the timer run a full renewal every single day for
 no reason — and every renewal sends the account password to the login service.
 
-## NucBox: Orca dev server
+## NucBox: dev server
 
-`nucbox/` records a second machine: an Ubuntu x86_64 box running [Orca](https://onorca.dev)'s
-headless runtime (`orca-ide serve`) behind Caddy, plus a mirror of `~/Projects`. Values come
-from the same `.env` (`NUCBOX`, `ORCA_HOST`, `ORCA_PORT`, `LAN_CIDR`; see `.env.example`).
+`nucbox/` records a second machine, unrelated to the Pi: an Ubuntu x86_64 box that runs
+[Orca](https://onorca.dev)'s headless runtime and the [Everon](#everon-on-the-box) viewer behind
+its own Caddy, plus a mirror of `~/Projects`. That Caddy is not the Pi's (`setup-pi.py`: internal
+CA, evcc/Pi-hole/Cockpit): it gets public certificates for a wildcard through Cloudflare's DNS
+challenge and puts a login page in front of Everon. Values come from the same `.env` (`NUCBOX`,
+`CADDY_DOMAIN`, `ORCA_HOST`, `ORCA_PORT`, `EVERON_HOST`, `EVERON_USER`, `LAN_CIDR`; see
+`.env.example`).
 
 ```bash
 ./nucbox/push.sh                  # Mac: copy nucbox/ to ~/nucbox on the box, with only those variables
 ./nucbox/sync-projects.sh         # Mac: mirror ~/Projects (copy, no deletes), fix worktree links
 # then on the box, in ~/nucbox:
-./install-orca.sh                 # renders orca.service into the user unit, enables linger, starts it
+./caddy-install.sh                # Caddy modules, environment file, service drop-in, baseline Caddyfile
+./install-orca.sh [orca.deb]      # installs orca-ide from the .deb if missing; renders orca.service, linger, starts it
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
+./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
 ./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
 ```
 
+### Caddy
+
+- Built from the distribution's `caddy` package (2.6.2 on Ubuntu 26.04) with
+  `caddy add-package github.com/caddy-dns/cloudflare github.com/greenpau/caddy-security`. Measured:
+  Caddy v2.11.7, `dns.providers.cloudflare` v0.2.4, `security` (caddy-security) v1.4.1;
+  `/usr/bin/caddy` goes through `alternatives` to `caddy.custom`, the stock binary stays as `caddy.default`.
+- `/etc/caddy/cloudflare.env` (root, 0600; shape in `cloudflare.env.example`) holds
+  `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit) and `AUTHP_SHARED_KEY` (random, signs the login's tokens;
+  `caddy-install.sh` generates it). `caddy-cloudflare.conf` is the drop-in
+  (`/etc/systemd/system/caddy.service.d/cloudflare.conf`) that loads it into `caddy.service`.
+  Fill the token with `sudoedit`; neither value is ever copied elsewhere.
+- Shape of the Caddyfile (`Caddyfile.template`): global `acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}`,
+  one `*.CADDY_DOMAIN` site with a `@name host ...` matcher and `handle @name { ... }` per service, and
+  a catch-all `handle { respond ... 404 }` last. The three `caddy-*.sh` scripts only touch their own
+  matcher and handle (and, for the login, the global `security` block), so other sites stay as they are.
+- Every script validates as the `caddy` user with the service's environment loaded (`setpriv`; a plain
+  `caddy validate` as root misses the env and the `caddy` user's permissions), keeps
+  `Caddyfile.bak.<date>`, restarts, and rolls back if Caddy does not come up. An unchanged Caddyfile
+  (after `caddy fmt`) exits without a restart.
+- Measured: caddy-security's store `/var/lib/caddy/authcrunch` must be owned by `caddy`;
+  root-owned files there stop the service (`lstat` permission denied).
+- Sites are open to the tailnet (`TAILNET_CIDR`, default `100.64.0.0/10`) and `LAN_CIDR` only; anyone
+  else gets a 403 from Caddy.
+
+### Everon on the box
+
+Install it as the slack repo's `electron/README.md` says (`sudo timedatectl set-timezone <zone>`, then
+`EVERON_KEYBOARD=<layout> make app`). `caddy-everon-login.sh` is the login in front of its noVNC viewer
+(ports 6080, and 6081 for a PC keyboard): a caddy-security local identity store with one user,
+`EVERON_USER`. The password is asked once (`caddy hash-password`) and afterwards kept as it is in the
+Caddyfile; no hash lives in this repo. The page at `/` opens the viewer with `path=websockify` on Apple
+platforms and `websockify-pc` elsewhere, and noVNC's Disconnect button goes to `/auth/logout`.
+
+Alerts: set Everon's `alertUrl` to `https://<ha-host>/api/webhook/<webhook_id>` and add
+`ha-everon-alert.yaml` to Home Assistant (webhook trigger, `notify.send_message` to your phone). The
+HA companion app needs its notification permission in the phone's settings, not only inside the app,
+for the message to reach the notification centre.
+
+### Orca
+
+- Download the `orca-ide` amd64 `.deb` from the project's releases (github.com/stablyai/orca) and run
+  `./install-orca.sh orca.deb`: it installs the package (running the extracted app fails, its
+  `chrome-sandbox` is not setuid) and the user unit for the current user, with linger on so it runs
+  without a login. Tested with 1.4.224.
 - **Pairing URL** is a secret; read it on the box and never commit it:
   `journalctl --user -u orca -o cat | grep "Pairing URL"`.
-- **Caddy** only touches the `@orca` matcher and its `handle`, before the catch-all `handle {`.
-  It validates as the `caddy` user with the service's environment file loaded, keeps
-  `Caddyfile.bak.<date>`, restarts, and rolls back if Caddy does not come up. caddy-security's
-  store (`/var/lib/caddy/authcrunch`) must be owned by `caddy`. The login-protected Everon site
-  is described in the slack repo's `electron/README.md`.
 - **Measured: orcad is broken** in orca-ide 1.4.224 (missing module), so `serve` falls back
   to Electron, which works headless. It binds `0.0.0.0` and has no bind option.
 - **Measured: tailscale comes before ufw.** Its `ts-input` chain is jumped first in `INPUT`
@@ -191,10 +236,25 @@ from the same `.env` (`NUCBOX`, `ORCA_HOST`, `ORCA_PORT`, `LAN_CIDR`; see `.env.
   `/etc/ufw/before.rules` and `before6.rules`; afterwards tailnet and LAN get no answer on the
   port and Caddy still does.
 - Changing `ORCA_PORT` later: remove the old `orca-tailnet` rule from both before.rules files by hand first (the marker ignores the port).
-- Claude Code is the only agent (`~/.local/bin/claude`); log in on the box yourself.
-- `sync-projects.sh` excludes `node_modules`, `.nuxt`, `.output`, `.next`, `.turbo`, `.cache`,
-  rewrites the Mac's home to the box's in `.git/worktrees/*/gitdir` and worktree `.git` files,
-  sets git's `core.filemode false` and copies `~/.config/git/ignore`.
+
+### Claude Code and GitHub on the box
+
+Claude Code is the only agent. Install it with the official installer (`curl -fsSL https://claude.ai/install.sh | bash`,
+it lands in `~/.local/bin/claude`, which the Orca unit has on its `PATH`) and log in yourself
+(`claude auth login`). For GitHub, make a key on the box (`ssh-keygen -t ed25519`), add the public key
+to your account, and check it with `ssh -T git@github.com`.
+
+### The Projects mirror
+
+`sync-projects.sh` excludes `node_modules`, `.nuxt`, `.output`, `.next`, `.turbo`, `.cache`,
+rewrites the Mac's home to the box's in `.git/worktrees/*/gitdir` and worktree `.git` files,
+sets git's `core.filemode false` and copies `~/.config/git/ignore`.
+
+### On the Mac: WARP
+
+With Cloudflare WARP on, the Mac's DNS goes to WARP and ignores the box's names. Put each
+`*.CADDY_DOMAIN` host you use (`ORCA_HOST`, `EVERON_HOST`) in `/etc/hosts` pointing at the box's LAN
+IP. Tailscale stays on demand: the tailnet addresses are only needed away from home.
 
 ## Tuning the control loop
 
