@@ -12,7 +12,7 @@ sudo -v
 
 for f in "$UFW_DIR/before.rules" "$UFW_DIR/before6.rules"; do
   sudo grep -q 'orca-tailnet' "$f" || continue
-  sudo cp "$f" "$f.bak.$(date +%Y%m%d-%H%M%S)"
+  sudo cp "$f" "$f.bak"
   sudo awk '
     /^\*raw$/ { blk = $0 ORS; held = 1; next }
     held { blk = blk $0 ORS; if ($0 == "COMMIT") { if (blk !~ /orca-tailnet/) printf "%s", blk; blk = ""; held = 0 }; next }
@@ -41,7 +41,7 @@ if sudo test -e "$init"; then
   first=$(sudo head -n1 "$init")
   [[ $first == '#!/bin/sh'* || $first == '#!/bin/bash'* || $first == '#!/usr/bin/env '*sh ]] ||
     { echo "$init exists and is not a shell script; add the orca-tailnet block by hand" >&2; exit 1; }
-  sudo cp "$init" "$init.bak.$(date +%Y%m%d-%H%M%S)"
+  sudo cp "$init" "$init.bak"
   rest=$(sudo awk '/^# BEGIN orca-tailnet$/ {skip=1} !skip && NR>1 {print} /^# END orca-tailnet$/ {skip=0}' "$init")
   printf '%s\n%s\n%s\n' "$first" "$block" "$rest" | sudo tee "$init.new" >/dev/null
   sudo mv "$init.new" "$init"
