@@ -28,11 +28,11 @@ apply_caddyfile() {
   fi
   rm -f "$log"
   bak="$LIVE.bak"
-  sudo cp "$LIVE" "$bak"; sudo mv "$cand" "$LIVE"; rm -f "$old" "$new"
+  sudo cp -p "$LIVE" "$bak"; sudo mv "$cand" "$LIVE"; rm -f "$old" "$new"
   sudo systemctl restart caddy || true
   sleep 2
   if ! systemctl is-active --quiet caddy; then
-    sudo cp "$bak" "$LIVE"; sudo systemctl restart caddy || true; die "caddy did not start; restored $bak"
+    sudo cp -p "$bak" "$LIVE"; sudo systemctl restart caddy || true; die "caddy did not start; restored $bak"
   fi
-  say "applied. undo: sudo cp $bak $LIVE && sudo systemctl restart caddy"
+  say "applied. undo: sudo cp -p $bak $LIVE && sudo systemctl restart caddy"
 }
