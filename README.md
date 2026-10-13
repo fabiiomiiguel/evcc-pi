@@ -189,7 +189,9 @@ challenge and puts a login page in front of Everon. Values come from the same `.
   Caddy v2.11.7, `dns.providers.cloudflare` v0.2.4, `security` (caddy-security) v1.4.1. On the box
   `dpkg-divert --list` shows `/usr/bin/caddy` diverted to `caddy.default` (the stock binary) and
   `update-alternatives` points `/usr/bin/caddy` at `caddy.custom` (priority 50 over 10), so an apt
-  upgrade replaces only the stock one. `caddy-install.sh` repeats that recipe (untested on a fresh box)
+  upgrade replaces only the stock one. `add-package` rewrites the file `/usr/bin/caddy` resolves to, so
+  `caddy-install.sh` copies the stock binary to `caddy.custom` and points the alternative at it first
+  (stubbed dry run only, untested on a fresh box)
   and refuses to touch a live Caddyfile that is not the package default.
 - `/etc/caddy/cloudflare.env` (root, 0600; shape in `cloudflare.env.example`) holds
   `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit) and `AUTHP_SHARED_KEY` (random, signs the login's tokens;

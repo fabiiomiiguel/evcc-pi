@@ -12,14 +12,17 @@ sudo -v
 mods=$(caddy list-modules)
 if ! grep -qx security <<<"$mods" || ! grep -qx dns.providers.cloudflare <<<"$mods"; then
   # the package owns /usr/bin/caddy: divert it, so an apt upgrade replaces caddy.default, not the custom build
-  if ! dpkg-divert --list | grep -q '/usr/bin/caddy.default'; then
+  if [[ $(dpkg-divert --truename /usr/bin/caddy) != /usr/bin/caddy.default ]]; then
     sudo dpkg-divert --local --rename --divert /usr/bin/caddy.default --add /usr/bin/caddy
     sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.default 10
   fi
-  say "adding the modules (builds /usr/bin/caddy.custom)..."
-  sudo caddy add-package github.com/caddy-dns/cloudflare github.com/greenpau/caddy-security
+  # add-package rewrites the file /usr/bin/caddy resolves to, so that must be the copy
+  [[ -e /usr/bin/caddy.custom ]] || sudo cp /usr/bin/caddy.default /usr/bin/caddy.custom
+  sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.custom 50
   [[ $(readlink -f /usr/bin/caddy) == /usr/bin/caddy.custom ]] ||
-    sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.custom 50
+    die "/usr/bin/caddy does not resolve to caddy.custom (update-alternatives --display caddy)"
+  say "adding the modules to /usr/bin/caddy.custom..."
+  sudo caddy add-package github.com/caddy-dns/cloudflare github.com/greenpau/caddy-security
 fi
 
 if ! sudo test -f "$ENVF"; then sudo install -m 600 -o root -g root "$HERE/cloudflare.env.example" "$ENVF"; fi
