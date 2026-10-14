@@ -3,7 +3,7 @@
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for f in "$here/.env" "$here/../.env"; do
   [[ -f $f ]] || continue
-  for n in NUCBOX ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR PROJECTS_DIR CADDY_DOMAIN EVERON_HOST EVERON_USER; do
+  for n in NUCBOX ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR CADDY_DOMAIN EVERON_HOST EVERON_USER; do
     [[ -n ${!n:-} ]] && continue
     v=$(set +u; . "$f"; printf %s "${!n:-}")
     [[ -z $v ]] || export "$n=$v"

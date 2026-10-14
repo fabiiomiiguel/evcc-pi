@@ -173,7 +173,6 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 
 ```bash
 ./nucbox/push.sh                  # Mac: copy nucbox/ to ~/nucbox on the box, with only those variables
-./nucbox/sync-projects.sh         # Mac: mirror ~/Projects (copy, no deletes), fix worktree links
 # then on the box, in ~/nucbox:
 ./caddy-install.sh                # Caddy modules, environment file, service drop-in, baseline Caddyfile
 ./install-orca.sh [orca.deb]      # installs orca-ide from the .deb if missing; renders orca.service, linger, starts it
@@ -254,11 +253,12 @@ it lands in `~/.local/bin/claude`, which the Orca unit has on its `PATH`) and lo
 (`claude auth login`). For GitHub, make a key on the box (`ssh-keygen -t ed25519`), add the public key
 to your account, and check it with `ssh -T git@github.com`.
 
-### The Projects mirror
+### Projects on the box
 
-`sync-projects.sh` excludes `node_modules`, `.nuxt`, `.output`, `.next`, `.turbo`, `.cache`,
-rewrites the Mac's home to the box's in `.git/worktrees/*/gitdir` and worktree `.git` files,
-sets git's `core.filemode false` and copies `~/.config/git/ignore`.
+The box keeps its own clones under `~/Projects/<org>/` and works on them itself; code moves
+between the Mac and the box through GitHub (push on one side, pull on the other), never by copying
+folders, which would overwrite unpushed work. Files outside git (`.env`, `dev/.config`) are copied
+by hand when they change.
 
 ### On the Mac: WARP
 
