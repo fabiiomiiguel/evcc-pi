@@ -165,7 +165,7 @@ no reason — and every renewal sends the account password to the login service.
 
 `nucbox/` records a second machine, unrelated to the Pi: an Ubuntu x86_64 box that runs
 [Orca](https://onorca.dev)'s headless runtime and the [Everon](#everon-on-the-box) viewer behind
-its own Caddy, plus a mirror of `~/Projects`. That Caddy is not the Pi's (`setup-pi.py`: internal
+its own Caddy, plus its own clones of `~/Projects` and the dogchef `dev` stack in an LXD container. That Caddy is not the Pi's (`setup-pi.py`: internal
 CA, evcc/Pi-hole/Cockpit): it gets public certificates for a wildcard through Cloudflare's DNS
 challenge and puts a login page in front of Everon. Values come from the same `.env` (`NUCBOX`,
 `CADDY_DOMAIN`, `ORCA_HOST`, `ORCA_PORT`, `EVERON_HOST`, `EVERON_USER`, `LAN_CIDR`; see
@@ -259,6 +259,58 @@ The box keeps its own clones under `~/Projects/<org>/` and works on them itself;
 between the Mac and the box through GitHub (push on one side, pull on the other), never by copying
 folders, which would overwrite unpushed work. Files outside git (`.env`, `dev/.config`) are copied
 by hand when they change.
+
+### dogchef `dev` stack in LXD
+
+The `dev` repo's compose binds `127.0.0.1:80/443`, which the box's Caddy already holds on every
+address, and the repo is shared, so it runs unchanged in an LXD system container `dev` with its own
+Docker and its own LAN address. Everything dogchef (repos of the `dogchef-be` org) goes through
+`devbox`; nothing of it runs on the host, and the apps are only opened from inside the box.
+
+```bash
+lxd init --preseed <<'EOF'          # dir pool, no managed network (no lxdbr0, whose dnsmasq would want :53)
+storage_pools: [{name: default, driver: dir}]
+profiles: [{name: default, devices: {root: {path: /, pool: default, type: disk}}}]
+EOF
+lxc init ubuntu:26.04 dev -c security.nesting=true -c limits.cpu=10 -c limits.memory=8GiB -c boot.autostart=true
+lxc config device add dev eth0 nic nictype=bridged parent=br0 name=eth0
+lxc start dev && lxc exec dev -- cloud-init status --wait
+lxc exec dev -- bash -c 'usermod -l fabio -d /home/fabio -m ubuntu && groupmod -n fabio ubuntu'
+lxc config device add dev projects disk source=/home/fabio/Projects path=/home/fabio/Projects shift=true
+lxc exec dev -- bash -c 'apt-get install -y docker.io docker-compose-v2 git make curl && usermod -aG docker fabio'
+install -m 755 ~/nucbox/devbox ~/.local/bin/devbox
+cat ~/nucbox/claude-devbox.md >> ~/.claude/CLAUDE.md   # tells Claude Code (Orca) to go through devbox
+cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
+```
+
+- Create the user before adding the `projects` disk: the mount creates `/home/fabio` as root and
+  `usermod -m` then fails. Copy `~/.gitconfig`, the GitHub key and its `known_hosts` lines into the
+  container's home; the mkcert CA comes from the Mac's `dev/.config/mkcert`.
+- `devbox` (`lxc exec … sudo -u fabio -H bash -l`) runs in the current directory as fabio with the
+  `docker` group; `lxc exec --user` alone gives gid 0 and no supplementary groups.
+- `br0` traffic does not go through ufw only because `br_netfilter` is not loaded
+  (`lsmod | grep br_netfilter` empty). Loaded later, it would cut the container and the `haos` VM off;
+  pin `net.bridge.bridge-nf-call-iptables=0` in `/etc/sysctl.d/` if anything loads it.
+- `*.test` resolves only inside the container (the stack's own dnsmasq). The host's glibc asks
+  Pi-hole and never reads systemd-resolved (`hosts: files mymachines dns`, stub listener off).
+- The dev DB cluster is private AWS (172.31.x), reached through Cloudflare WARP, org `dogchef`,
+  installed and registered inside the container only (`pkg.cloudflareclient.com`, then
+  `warp-cli registration new dogchef`). The login token from `https://dogchef.cloudflareaccess.com/warp`
+  lasts about a minute: copy the "Open Cloudflare WARP" link instead of clicking it (the Mac's own
+  WARP would take it) and pass it to `warp-cli registration token "<link>"`, then `warp-cli connect`.
+  `make reset-db-{dogchef,vetchef,erp}` needs it.
+- After a reboot the container comes back but the stack does not (no restart policy in the compose):
+  `cd ~/Projects/dogchef/dev && devbox make start`.
+- The `dev` repo's MCP servers run on the host with Claude Code: `uv`, the AWS CLI and the Google Cloud
+  SDK live under `~/.local` and `~/google-cloud-sdk` (no sudo), `~/.bashrc` exports
+  `GITHUB_PERSONAL_ACCESS_TOKEN` from `gh auth token`, and the AWS/gcloud logins are yours.
+
+### Orca clients
+
+Mac: Settings → Remote Orca Servers → Add Server, with the pairing URL from the journal. Phone: the
+unit needs `--mobile-pairing` for a mobile QR/link (a drop-in, then a restart, which drops open
+sessions); already-paired clients keep their grants. Both reach `wss://ORCA_HOST`, which only
+Pi-hole resolves, so away from home the client needs the tailnet with Pi-hole as its DNS.
 
 ### On the Mac: WARP
 
