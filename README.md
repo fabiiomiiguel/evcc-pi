@@ -286,6 +286,8 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
 - Create the user before adding the `projects` disk: the mount creates `/home/fabio` as root and
   `usermod -m` then fails. Copy `~/.gitconfig`, the GitHub key and its `known_hosts` lines into the
   container's home; the mkcert CA comes from the Mac's `dev/.config/mkcert`.
+- The image's sshd is disabled and masked (`systemctl mask ssh.socket ssh.service` inside): `devbox`
+  uses `lxc exec`, so the container listens on nothing on the LAN.
 - `devbox` (`lxc exec … sudo -u fabio -H bash -l`) runs in the current directory as fabio with the
   `docker` group; `lxc exec --user` alone gives gid 0 and no supplementary groups.
 - `br0` traffic does not go through ufw only because `br_netfilter` is not loaded
