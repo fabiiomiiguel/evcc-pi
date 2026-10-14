@@ -290,7 +290,9 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
   `docker` group; `lxc exec --user` alone gives gid 0 and no supplementary groups.
 - `br0` traffic does not go through ufw only because `br_netfilter` is not loaded
   (`lsmod | grep br_netfilter` empty). Loaded later, it would cut the container and the `haos` VM off;
-  pin `net.bridge.bridge-nf-call-iptables=0` in `/etc/sysctl.d/` if anything loads it.
+  `/etc/sysctl.d/99-br0.conf` sets `net.bridge.bridge-nf-call-ip{,6}tables=0` at boot, and an
+  `install br_netfilter` line in `/etc/modprobe.d/br0.conf` applies it whenever the module is loaded
+  later (Ubuntu ships no udev rule for that, and the keys do not exist until the module is in).
 - `*.test` resolves only inside the container (the stack's own dnsmasq). The host's glibc asks
   Pi-hole and never reads systemd-resolved (`hosts: files mymachines dns`, stub listener off).
 - The dev DB cluster is private AWS (172.31.x), reached through Cloudflare WARP, org `dogchef`,
