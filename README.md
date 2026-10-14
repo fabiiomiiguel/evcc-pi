@@ -251,7 +251,9 @@ for the message to reach the notification centre.
 Claude Code is the only agent. Install it with the official installer (`curl -fsSL https://claude.ai/install.sh | bash`,
 it lands in `~/.local/bin/claude`, which the Orca unit has on its `PATH`) and log in yourself
 (`claude auth login`). For GitHub, make a key on the box (`ssh-keygen -t ed25519`), add the public key
-to your account, and check it with `ssh -T git@github.com`.
+to your account, and check it with `ssh -T git@github.com`. Clones with an `https://` remote need
+`gh auth setup-git` once (after `gh auth login`); without it `git push` fails with "unable to get
+password from user".
 
 ### Projects on the box
 
