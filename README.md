@@ -311,10 +311,10 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
 
 ### Orca clients
 
-Mac: Settings → Remote Orca Servers → Add Server, with the pairing URL from the journal. Phone: the
-unit needs `--mobile-pairing` for a mobile QR/link (a drop-in, then a restart, which drops open
-sessions); already-paired clients keep their grants. Both reach `wss://ORCA_HOST`, which only
-Pi-hole resolves, so away from home the client needs the tailnet with Pi-hole as its DNS.
+Every client pairs with the box itself, using the same pairing URL from the journal: on a computer
+(Mac, Windows) Settings → Remote Orca Servers → Add Server; on the iPhone the Orca app takes the
+same URL (measured: no `--mobile-pairing` on the unit needed). All of them reach `wss://ORCA_HOST`,
+which only Pi-hole resolves, so away from home the client needs the tailnet with Pi-hole as its DNS.
 
 ### On the Mac: WARP
 
