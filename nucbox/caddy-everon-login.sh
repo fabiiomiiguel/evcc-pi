@@ -53,7 +53,7 @@ EOF
 				<!doctype html><html><head><meta charset="utf-8"><title>Everon</title><style>html,body{margin:0;height:100%;background:#282828}iframe{border:0;width:100%;height:100%;display:block}</style></head>
 				<body><iframe title="Everon"></iframe><p id="bye" hidden style="color:#ddd;font:16px sans-serif;text-align:center;margin-top:20vh">Sessão terminada. <a style="color:#8cf" href="/">Entrar novamente</a></p><script>
 				const f=document.querySelector("iframe");
-				f.addEventListener("load",()=>f.contentDocument.getElementById("noVNC_disconnect_button")?.addEventListener("click",()=>fetch("/auth/logout",{redirect:"manual"}).finally(()=>{f.remove();bye.hidden=false})));
+				f.addEventListener("load",()=>f.contentDocument.getElementById("noVNC_disconnect_button")?.addEventListener("click",()=>fetch("/auth/logout",{redirect:"manual"}).then(r=>{if(r.type!=="opaqueredirect"&&!r.ok)throw 0;f.remove();document.getElementById("bye").hidden=false}).catch(()=>location.href="/auth/logout")));
 				const mac=/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform);
 				f.src="/vnc.html?autoconnect=1&resize=scale&path=websockify"+(mac?"":"-pc");
 				</script></body></html>

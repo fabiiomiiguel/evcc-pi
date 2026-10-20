@@ -219,7 +219,7 @@ Install it as the slack repo's `electron/README.md` says (`sudo timedatectl set-
 Caddy can open; there is no TCP port): a caddy-security local identity store with one user,
 `EVERON_USER`. The password is asked once (`caddy hash-password`) and afterwards kept as it is in the
 Caddyfile; no hash lives in this repo. The page at `/` opens the viewer with `path=websockify` on Apple
-platforms and `websockify-pc` elsewhere, and noVNC's Disconnect button calls `/auth/logout` with a background `fetch` (so text typed in the address bar does not block it) and shows "Sessão terminada" with a link to log in again.
+platforms and `websockify-pc` elsewhere, and noVNC's Disconnect button calls `/auth/logout` with a background `fetch` (so text typed in the address bar does not block it) and shows "Sessão terminada" with a link to log in again only when the logout answered with its redirect (any failure falls back to navigating to `/auth/logout`).
 
 Alerts: set Everon's `alertUrl` to `https://<ha-host>/api/webhook/<webhook_id>` and add
 `ha-everon-alert.yaml` to Home Assistant (webhook trigger, `notify.send_message` to your phone). The
