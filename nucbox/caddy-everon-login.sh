@@ -51,11 +51,11 @@ EOF
 			header / Content-Type "text/html; charset=utf-8"
 			respond / <<HTML
 				<!doctype html><html><head><meta charset="utf-8"><title>Everon</title><style>html,body{margin:0;height:100%;background:#282828}iframe{border:0;width:100%;height:100%;display:block}</style></head>
-				<body><iframe title="Everon"></iframe><p id="bye" hidden style="color:#ddd;font:16px sans-serif;text-align:center;margin-top:20vh"><span id="msg">Disconnecting…</span> <a id="go" hidden style="color:#8cf"></a></p><script>
-				const f=document.querySelector("iframe"),el=id=>document.getElementById(id);
-				// Shows the way on by hand if the navigation is blocked (e.g. unsubmitted text in the address bar).
-				const go=(href,msg,label)=>{setTimeout(()=>location.replace(href),300);setTimeout(()=>{el("msg").textContent=msg;el("go").href=href;el("go").textContent=label;el("go").hidden=false},2000)};
-				f.addEventListener("load",()=>f.contentDocument.getElementById("noVNC_disconnect_button")?.addEventListener("click",()=>{f.remove();el("bye").hidden=false;fetch("/auth/logout",{redirect:"manual"}).then(r=>{if(r.type!=="opaqueredirect"&&!r.ok)throw 0;go("/","Sessão terminada.","Entrar novamente")}).catch(()=>go("/auth/logout","A sessão pode continuar aberta.","Terminar sessão"))}));
+				<body><iframe title="Everon"></iframe><script>
+				const f=document.querySelector("iframe");
+				// Keeps noVNC's own Disconnecting... screen up until the login; if the navigation is blocked (e.g. unsubmitted
+				// text in the address bar), shows a link there to finish by hand.
+				f.addEventListener("load",()=>{const d=f.contentDocument,t=d.getElementById("noVNC_transition_text");const go=(href,msg,label)=>{setTimeout(()=>location.replace(href),300);setTimeout(()=>{t.textContent=msg+" ";const a=t.appendChild(d.createElement("a"));a.href=href;a.target="_top";a.textContent=label;a.style.color="#8cf"},2000)};d.getElementById("noVNC_disconnect_button")?.addEventListener("click",()=>{d.head.appendChild(d.createElement("style")).textContent="#noVNC_transition{opacity:1!important;visibility:visible!important}#noVNC_connect_dlg,#noVNC_control_bar_anchor,#noVNC_status{display:none!important}";t.textContent="Disconnecting...";fetch("/auth/logout",{redirect:"manual"}).then(r=>{if(r.type!=="opaqueredirect"&&!r.ok)throw 0;go("/","Sessão terminada.","Entrar novamente")}).catch(()=>go("/auth/logout","A sessão pode continuar aberta.","Terminar sessão"))})});
 				const mac=/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform);
 				f.src="/vnc.html?autoconnect=1&resize=scale&path=websockify"+(mac?"":"-pc");
 				</script></body></html>
