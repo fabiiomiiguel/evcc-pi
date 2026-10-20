@@ -54,7 +54,7 @@ EOF
 				<body><iframe title="Everon"></iframe><p id="bye" hidden style="color:#ddd;font:16px sans-serif;text-align:center;margin-top:20vh"><span id="msg">Disconnecting…</span> <a id="go" hidden style="color:#8cf"></a></p><script>
 				const f=document.querySelector("iframe"),el=id=>document.getElementById(id);
 				// Shows the way on by hand if the navigation is blocked (e.g. unsubmitted text in the address bar).
-				const go=(href,msg,label)=>{location.replace(href);setTimeout(()=>{el("msg").textContent=msg;el("go").href=href;el("go").textContent=label;el("go").hidden=false},2000)};
+				const go=(href,msg,label)=>{setTimeout(()=>location.replace(href),300);setTimeout(()=>{el("msg").textContent=msg;el("go").href=href;el("go").textContent=label;el("go").hidden=false},2000)};
 				f.addEventListener("load",()=>f.contentDocument.getElementById("noVNC_disconnect_button")?.addEventListener("click",()=>{f.remove();el("bye").hidden=false;fetch("/auth/logout",{redirect:"manual"}).then(r=>{if(r.type!=="opaqueredirect"&&!r.ok)throw 0;go("/","Sessão terminada.","Entrar novamente")}).catch(()=>go("/auth/logout","A sessão pode continuar aberta.","Terminar sessão"))}));
 				const mac=/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform);
 				f.src="/vnc.html?autoconnect=1&resize=scale&path=websockify"+(mac?"":"-pc");
