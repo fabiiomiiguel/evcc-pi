@@ -215,7 +215,8 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 
 Install it as the slack repo's `electron/README.md` says (`sudo timedatectl set-timezone <zone>`, then
 `EVERON_KEYBOARD=<layout> make app`). `caddy-everon-login.sh` is the login in front of its noVNC viewer
-(ports 6080, and 6081 for a PC keyboard): a caddy-security local identity store with one user,
+(unix sockets `/run/everon/novnc.sock`, and `novnc-pc.sock` for a PC keyboard, which only `everon` and
+Caddy can open; there is no TCP port): a caddy-security local identity store with one user,
 `EVERON_USER`. The password is asked once (`caddy hash-password`) and afterwards kept as it is in the
 Caddyfile; no hash lives in this repo. The page at `/` opens the viewer with `path=websockify` on Apple
 platforms and `websockify-pc` elsewhere, and noVNC's Disconnect button goes to `/auth/logout`.

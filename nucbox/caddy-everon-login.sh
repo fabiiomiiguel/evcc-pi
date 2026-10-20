@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Puts caddy-security's login page in front of Everon's noVNC viewer (127.0.0.1:6080, and :6081 for a
-# PC keyboard) at EVERON_HOST, tailnet + LAN only. Edits only the global `security` block and the
-# `@everon` site in the live Caddyfile; safe to run again. `--print` renders both and touches nothing.
+# Puts caddy-security's login page in front of Everon's noVNC viewer (/run/everon/novnc.sock, and
+# novnc-pc.sock for a PC keyboard) at EVERON_HOST, tailnet + LAN only. Edits only the global `security`
+# block and the `@everon` site in the live Caddyfile; safe to run again. `--print` renders both and touches nothing.
 # The login's password is asked once (caddy hash-password) and then kept as it is in the Caddyfile.
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
@@ -58,8 +58,8 @@ EOF
 				f.src="/vnc.html?autoconnect=1&resize=scale&path=websockify"+(mac?"":"-pc");
 				</script></body></html>
 				HTML 200
-			reverse_proxy /websockify-pc 127.0.0.1:6081
-			reverse_proxy 127.0.0.1:6080
+			reverse_proxy /websockify-pc unix//run/everon/novnc-pc.sock
+			reverse_proxy unix//run/everon/novnc.sock
 		}
 	}
 EOF
