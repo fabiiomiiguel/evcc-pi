@@ -235,14 +235,14 @@ for the message to reach the notification centre.
 ### Previews of local dev servers
 
 Any dev server on the box opens at `https://<port>.preview.CADDY_DOMAIN` (tailnet + LAN only), for
-ports 3000-9999 except the denylist: start it on `127.0.0.1:<port>` (Vite's default `localhost` is
-`127.0.0.1` in the box's `/etc/hosts`), open the URL, log in once at `login.preview.CADDY_DOMAIN` with the Everon user, and
+ports 3000-9999 except the denylist: start it on `127.0.0.1:<port>` or `[::1]:<port>` (Caddy tries
+`127.0.0.1` first and `[::1]` when nothing listens there), open the URL, log in once at `login.preview.CADDY_DOMAIN` with the Everon user, and
 every preview opens with that session (12 h). `caddy-previews.sh` adds the `*.preview.CADDY_DOMAIN`
 site and the `previewportal` to the `security` block (run `caddy-install.sh` first, for
 `AUTHP_PREVIEW_KEY`, and `caddy-everon-login.sh`, for the user). The dogchef `.test` apps are a separate
 path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not on `127.0.0.1` here).
 
-- Bind to `127.0.0.1`, not `0.0.0.0`: tailscale accepts tailnet traffic before ufw (see Orca), so a
+- Bind to `127.0.0.1` or `::1`, not `0.0.0.0`: tailscale accepts tailnet traffic before ufw (see Orca), so a
   server on `0.0.0.0` is open to the tailnet and the LAN without the login.
 - Caddy rewrites `Host` to `localhost:<port>`: Vite (`server.allowedHosts`) and webpack-dev-server
   (`allowedHosts`) refuse other hosts, `localhost` passes; `X-Forwarded-Host` keeps the real name.

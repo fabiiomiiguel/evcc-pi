@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const PORT = 18480;
 const UP = 4321; // an allowed preview port the test listens on
+const UP6 = 4322; // another, listened on [::1] only
 const D = "preview.example.com";
 const script = fileURLToPath(new URL("../caddy-previews.sh", import.meta.url));
 const env = {
@@ -19,7 +20,7 @@ const env = {
   LAN_CIDR: "127.0.0.0/8", CLOUDFLARE_API_TOKEN: "x".repeat(40), AUTHP_SHARED_KEY: "a".repeat(64), AUTHP_PREVIEW_KEY: "b".repeat(64),
 };
 const dir = mkdtempSync(join(tmpdir(), "previews-"));
-let caddy, upstream;
+let caddy, upstream, upstream6;
 
 // The rendered config, moved to plain HTTP on PORT with a real hash and a writable store: nothing else changes.
 function config() {
@@ -59,6 +60,8 @@ before(async () => {
   upstream = http.createServer((q, s) => s.end(`host=${q.headers.host} forwarded=${q.headers["x-forwarded-host"]}`));
   upstream.on("upgrade", (q, sock) => sock.end(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Host: ${q.headers.host}\r\n\r\n`));
   await new Promise((ok) => upstream.listen(UP, "127.0.0.1", ok));
+  upstream6 = http.createServer((q, s) => s.end("ipv6"));
+  await new Promise((ok) => upstream6.listen(UP6, "::1", ok));
   writeFileSync(join(dir, "Caddyfile"), config());
   caddy = spawn("caddy", ["run", "--config", join(dir, "Caddyfile")], { env, stdio: "ignore" });
   for (let i = 0; i < 50; i++) {
@@ -70,7 +73,17 @@ before(async () => {
 after(() => {
   caddy?.kill();
   upstream?.close();
+  upstream6?.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("rendering again over its own output changes nothing but keeps the rest of the file", () => {
+  const print = (file) => execFileSync("bash", [script, "--print", ...(file ? [file] : [])], { encoding: "utf8", env });
+  const once = print();
+  const other = "other.example.com {\n\trespond 200\n}\n";
+  const input = join(dir, "again");
+  writeFileSync(input, once.replace("respond @outsiders 403", "respond @outsiders 418") + other);
+  assert.equal(print(input), once + other);
 });
 
 test("refused hosts get 404 before the login", async () => {
@@ -82,6 +95,7 @@ test("refused hosts get 404 before the login", async () => {
 test("an allowed port without a session goes to the login", async () => {
   const r = await req(`${UP}.${D}`, "/x?y=1");
   assert.equal(r.status, 302);
+  assert.equal((await req(`${UP6}.${D}`)).status, 302, "the [::1] fallback is behind the login too");
   assert.match(r.location, new RegExp(`^http://login\\.${D}:${PORT}/\\?redirect_url=`));
 });
 
@@ -106,6 +120,7 @@ test("one login opens every allowed port; the dev server sees Host localhost:<po
   const page = await req(`${UP}.${D}`);
   assert.equal(page.status, 200);
   assert.equal(page.body, `host=localhost:${UP} forwarded=${UP}.${D}:${PORT}`);
+  assert.equal((await req(`${UP6}.${D}`)).body, "ipv6", "a server on [::1] only is reached too");
   assert.equal((await req(`5555.${D}`)).status, 502); // authorised and proxied; nothing listens there
   assert.equal((await req(`9090.${D}`)).status, 404);
 
@@ -120,4 +135,5 @@ test("one login opens every allowed port; the dev server sees Host localhost:<po
   const out = await req(`login.${D}`, "/logout");
   assert.ok(out.cookies.some((c) => /^AUTHP_ACCESS_TOKEN=delete;.*Domain=preview\.example\.com;/.test(c)), "logout clears the shared cookie");
   assert.equal((await req(`${UP}.${D}`)).status, 302);
+  assert.equal((await req(`${UP6}.${D}`)).status, 302);
 });

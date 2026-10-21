@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Puts any local dev server on 127.0.0.1:<port> at https://<port>.preview.CADDY_DOMAIN, tailnet + LAN only, behind
+# Puts any local dev server on 127.0.0.1:<port> (or [::1]:<port>) at https://<port>.preview.CADDY_DOMAIN, tailnet + LAN only, behind
 # the login (portal at login.preview.CADDY_DOMAIN, one session for every preview). Ports 3000-9999 minus DENY;
 # anything else gets 404 before the login. Edits only the global `security` block and the
-# `*.preview.CADDY_DOMAIN` site in the live Caddyfile; safe to run again. `--print` renders and touches nothing.
+# `*.preview.CADDY_DOMAIN` site in the live Caddyfile; safe to run again. `--print [Caddyfile]` renders over that
+# file (default: the baseline) and touches nothing.
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
 . "$(dirname "$0")/caddy-lib.sh"
@@ -36,6 +37,12 @@ render() {
 			header_up Host localhost:{re.port.1}
 		}
 	}
+	# Only a request the route proxied gets Caddy's own 502: nothing on 127.0.0.1, so try a server bound to [::1] only.
+	handle_errors 502 {
+		reverse_proxy @port [::1]:{re.port.1} {
+			header_up Host localhost:{re.port.1}
+		}
+	}
 }
 EOF
   rm -f "$mid"
@@ -44,11 +51,12 @@ EOF
 old=$(mktemp); new=$(mktemp)
 if [[ ${1:-} == --print ]]; then
   PW='bcrypt:14:<hash from caddy hash-password>'
-  baseline example.com >"$old"; render "$old" "$new"; cat "$new"; rm -f "$old" "$new"; exit 0
+  if [[ -n ${2:-} ]]; then cp "$2" "$old"; else baseline "$CADDY_DOMAIN" >"$old"; fi
+  render "$old" "$new"; cat "$new"; rm -f "$old" "$new"; exit 0
 fi
 
 read_live "$old"
 [[ -n $PW ]] || { rm -f "$old" "$new"; die "no login user in the Caddyfile yet: run ./caddy-everon-login.sh first"; }
 render "$old" "$new" || { rm -f "$old" "$new"; exit 1; }
 apply_caddyfile "$old" "$new"
-say "https://<port>.preview.$CADDY_DOMAIN -> 127.0.0.1:<port> after the login at https://login.preview.$CADDY_DOMAIN/"
+say "https://<port>.preview.$CADDY_DOMAIN -> 127.0.0.1:<port> (or [::1]) after the login at https://login.preview.$CADDY_DOMAIN/"

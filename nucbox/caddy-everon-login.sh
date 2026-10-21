@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Puts caddy-security's login page in front of Everon's noVNC viewer (/run/everon/novnc.sock, and
 # novnc-pc.sock for a PC keyboard) at EVERON_HOST, tailnet + LAN only. Edits only the global `security`
-# block and the `@everon` site in the live Caddyfile; safe to run again. `--print` renders both and touches nothing.
+# block (both portals, Everon's and the previews', see caddy-lib.sh: needs CADDY_DOMAIN and AUTHP_PREVIEW_KEY)
+# and the `@everon` site in the live Caddyfile; safe to run again. `--print` renders both and touches nothing.
 # The login's password is asked once (caddy hash-password) and then kept as it is in the Caddyfile.
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
@@ -56,7 +57,7 @@ EOF
 old=$(mktemp); new=$(mktemp)
 if [[ ${1:-} == --print ]]; then
   PW='bcrypt:14:<hash from caddy hash-password>'
-  baseline example.com >"$old"; render "$old" "$new"; cat "$new"; rm -f "$old" "$new"; exit 0
+  baseline "$CADDY_DOMAIN" >"$old"; render "$old" "$new"; cat "$new"; rm -f "$old" "$new"; exit 0
 fi
 
 read_live "$old"
