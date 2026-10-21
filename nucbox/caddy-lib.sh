@@ -1,4 +1,4 @@
-# sourced by caddy-install.sh, caddy-orca.sh and caddy-everon-login.sh
+# sourced by the caddy-*.sh scripts
 LIVE=/etc/caddy/Caddyfile
 ENVF=/etc/caddy/cloudflare.env   # the service's environment; validate must load it
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -7,6 +7,58 @@ die() { echo "!! $*" >&2; exit 1; }
 
 # the baseline Caddyfile for $1 (a domain)
 baseline() { sed "s|@CADDY_DOMAIN@|$1|g" "$HERE/Caddyfile.template"; }
+
+# caddy-security's global block: one identity store, the Everon portal (host-only cookie) and the previews'
+# portal on login.preview.CADDY_DOMAIN (cookie for preview.CADDY_DOMAIN only, its own key, so a token a dev
+# server sees is not valid on Everon). $PW is the identity's `bcrypt:<cost>:<hash>`.
+security_block() {
+  : "${EVERON_HOST:?set EVERON_HOST in .env}" "${EVERON_USER:?set EVERON_USER in .env}" "${CADDY_DOMAIN:?set CADDY_DOMAIN in .env}"
+  cat <<EOF
+	security {
+		local identity store localdb {
+			realm local
+			path /var/lib/caddy/authcrunch/users.json
+			user $EVERON_USER {
+				name "$EVERON_USER"
+				email $EVERON_USER@${EVERON_HOST#*.}
+				password "$PW"
+				roles authp/admin
+			}
+		}
+		authentication portal everonportal {
+			crypto default token lifetime 43200
+			crypto key sign-verify {env.AUTHP_SHARED_KEY}
+			enable identity store localdb
+			trust login redirect uri domain exact $EVERON_HOST path prefix /
+		}
+		authorization policy everonpolicy {
+			set auth url /auth/
+			crypto key verify {env.AUTHP_SHARED_KEY}
+			allow roles authp/admin
+		}
+		authentication portal previewportal {
+			crypto default token lifetime 43200
+			crypto key sign-verify {env.AUTHP_PREVIEW_KEY}
+			cookie domain preview.$CADDY_DOMAIN
+			enable identity store localdb
+			trust login redirect uri domain suffix .preview.$CADDY_DOMAIN path prefix /
+		}
+		authorization policy previewpolicy {
+			set auth url https://login.preview.$CADDY_DOMAIN/
+			crypto key verify {env.AUTHP_PREVIEW_KEY}
+			allow roles authp/admin
+		}
+	}
+EOF
+}
+
+# $1 = where to copy the live Caddyfile; sets PW to its identity's hash (empty when it has none)
+read_live() {
+  sudo -v
+  sudo grep -q '^AUTHP_PREVIEW_KEY=.' "$ENVF" || die "no AUTHP_PREVIEW_KEY in $ENVF: run ./caddy-install.sh"
+  sudo cat "$LIVE" >"$1"
+  PW=$(grep -oE 'password "bcrypt:[0-9]+:[^"]+"' "$1" | head -1 | cut -d'"' -f2 || true)
+}
 
 # $1 = the live Caddyfile as a file, $2 = the candidate: validates as the caddy user, backs up,
 # installs, restarts and rolls back if Caddy does not come up. Both files are removed.

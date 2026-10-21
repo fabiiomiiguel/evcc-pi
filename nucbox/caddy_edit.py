@@ -4,6 +4,7 @@
   caddy_edit.py site SRC DST NAME   replace or add `@NAME host ...` + `handle @NAME {...}` (tab-indented,
                                     inside the wildcard site), before the catch-all `handle {`
   caddy_edit.py security SRC DST    replace or add the `security {...}` block in the global options
+  caddy_edit.py top SRC DST ADDR    replace or add (at the end) the top-level site block `ADDR {...}`
 """
 import re
 import sys
@@ -50,8 +51,16 @@ def put_security(src, block):
     return src[:g0] + glob + src[g1:]
 
 
+def put_top(src, addr, block):
+    m = re.search(rf'^{re.escape(addr)} \{{', src, re.M)
+    if m:
+        return src[:m.start()] + block + src[block_end(src, m.start()):]
+    return src.rstrip('\n') + '\n\n' + block
+
+
 if __name__ == '__main__':
     kind, src_path, dst_path, *rest = sys.argv[1:]
     src, block = open(src_path).read(), sys.stdin.read()
-    out = put_site(src, rest[0], block) if kind == 'site' else put_security(src, block)
+    out = {'site': lambda: put_site(src, rest[0], block), 'top': lambda: put_top(src, rest[0], block),
+           'security': lambda: put_security(src, block)}[kind]()
     open(dst_path, 'w').write(out)

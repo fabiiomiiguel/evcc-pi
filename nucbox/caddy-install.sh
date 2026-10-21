@@ -27,7 +27,9 @@ if ! grep -qx security <<<"$mods" || ! grep -qx dns.providers.cloudflare <<<"$mo
 fi
 
 if ! sudo test -f "$ENVF"; then sudo install -m 600 -o root -g root "$HERE/cloudflare.env.example" "$ENVF"; fi
-sudo grep -q '^AUTHP_SHARED_KEY=' "$ENVF" || echo "AUTHP_SHARED_KEY=$(openssl rand -hex 32)" | sudo tee -a "$ENVF" >/dev/null
+for k in AUTHP_SHARED_KEY AUTHP_PREVIEW_KEY; do
+  sudo grep -q "^$k=" "$ENVF" || echo "$k=$(openssl rand -hex 32)" | sudo tee -a "$ENVF" >/dev/null
+done
 sudo grep -q '^CLOUDFLARE_API_TOKEN=.' "$ENVF" || say "put the token in: sudoedit $ENVF"
 
 sudo install -d /etc/systemd/system/caddy.service.d

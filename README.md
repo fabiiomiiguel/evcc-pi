@@ -178,6 +178,7 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 ./install-orca.sh [orca.deb]      # installs orca-ide from the .deb if missing; renders orca.service, linger, starts it
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
 ./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
+./caddy-previews.sh               # https://<port>.preview.CADDY_DOMAIN -> 127.0.0.1:<port>, behind the login
 ./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
 ./dev-lan-access.sh               # LXD dev: firewall, key-only sshd, dev-proxy on its LAN address (no sudo)
 ./pihole-test-dns.sh              # Pi-hole answers *.test with LXD dev's address
@@ -195,15 +196,17 @@ challenge and puts a login page in front of Everon. Values come from the same `.
   (stubbed dry run only, untested on a fresh box)
   and refuses to touch a live Caddyfile that is not the package default.
 - `/etc/caddy/cloudflare.env` (root, 0600; shape in `cloudflare.env.example`) holds
-  `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit) and `AUTHP_SHARED_KEY` (random, signs the login's tokens;
-  `caddy-install.sh` generates it). `caddy-cloudflare.conf` is the drop-in
+  `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit), `AUTHP_SHARED_KEY` and `AUTHP_PREVIEW_KEY` (random, sign
+  the Everon and the preview logins' tokens; `caddy-install.sh` generates them). `caddy-cloudflare.conf` is the drop-in
   (`/etc/systemd/system/caddy.service.d/cloudflare.conf`) that loads it into `caddy.service`.
   Fill the token with `sudoedit`; neither value is ever copied elsewhere.
 - Shape of the Caddyfile (`Caddyfile.template`): global `acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}`,
   one `*.CADDY_DOMAIN` site with a `@name host ...` matcher and `handle @name { ... }` per service, and
   a catch-all `handle { respond ... 404 }` last. `caddy-install.sh` replaces the whole file, only
-  when it is the package default (it refuses otherwise); the other two `caddy-*.sh` scripts only touch their
-  own matcher and handle (and, for the login, the global `security` block), so other sites stay as they are.
+  when it is the package default (it refuses otherwise); the other `caddy-*.sh` scripts only touch their
+  own matcher and handle, or their own site block for the previews, plus (for the logins) the global
+  `security` block, which both login scripts render the same way (`security_block` in `caddy-lib.sh`), so
+  other sites stay as they are.
 - Every script validates as the `caddy` user with the service's environment loaded (`setpriv`; a plain
   `caddy validate` as root misses the env and the `caddy` user's permissions), keeps
   one `Caddyfile.bak`, restarts, and rolls back if Caddy does not come up. An unchanged Caddyfile
@@ -228,6 +231,54 @@ Alerts: set Everon's `alertUrl` to `https://<ha-host>/api/webhook/<webhook_id>` 
 `ha-everon-alert.yaml` to Home Assistant (webhook trigger, `notify.send_message` to your phone). The
 HA companion app needs its notification permission in the phone's settings, not only inside the app,
 for the message to reach the notification centre.
+
+### Previews of local dev servers
+
+Any dev server on the box opens at `https://<port>.preview.CADDY_DOMAIN` (tailnet + LAN only), for
+ports 3000-9999 except the denylist: start it on `127.0.0.1:<port>` (Vite's default `localhost` is
+`127.0.0.1` in the box's `/etc/hosts`), open the URL, log in once at `login.preview.CADDY_DOMAIN` with the Everon user, and
+every preview opens with that session (12 h). `caddy-previews.sh` adds the `*.preview.CADDY_DOMAIN`
+site and the `previewportal` to the `security` block (run `caddy-install.sh` first, for
+`AUTHP_PREVIEW_KEY`, and `caddy-everon-login.sh`, for the user). The dogchef `.test` apps are a separate
+path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not on `127.0.0.1` here).
+
+- Bind to `127.0.0.1`, not `0.0.0.0`: tailscale accepts tailnet traffic before ufw (see Orca), so a
+  server on `0.0.0.0` is open to the tailnet and the LAN without the login.
+- Caddy rewrites `Host` to `localhost:<port>`: Vite (`server.allowedHosts`) and webpack-dev-server
+  (`allowedHosts`) refuse other hosts, `localhost` passes; `X-Forwarded-Host` keeps the real name.
+  A server that builds absolute URLs from `Host` (redirects) points at `localhost:<port>`; set its
+  public URL to the preview's. Websockets (HMR) pass through.
+- The login: own portal and own key, its cookie goes to `*.preview.CADDY_DOMAIN` only. The previewed
+  servers see that cookie (any dev dependency could read it); a key of its own means such a token opens
+  other previews but never Everon, and Everon's cookie (host-only) never reaches a preview. Logout:
+  `https://login.preview.CADDY_DOMAIN/logout`.
+- Certificate: `*.CADDY_DOMAIN` does not cover two labels, so Caddy gets a `*.preview.CADDY_DOMAIN`
+  certificate through the same Cloudflare DNS challenge; no public DNS record. Name resolution: the
+  NucBox Pi-hole's `*.CADDY_DOMAIN` answer already covers `*.preview` (`dig +short 4321.preview.<domain>
+  @127.0.0.1` gave the box's address before this site existed).
+- Refused with a 404 before the login: any label that is not a port in 3000-9999 (`abc`, `2999`, `10000`,
+  `04321`) and the denylist (`DENY` in `caddy-previews.sh`), ports that are never a dev server:
+
+  | Port | What | Source |
+  |---|---|---|
+  | 3000 | stellantis-worker (uvicorn, podman with host network, root) | `ps`: `uvicorn main:app --port 3000`; `stellantis-worker.container` |
+  | 3306 | MySQL (dogchef `dev-mysql`, in the container) | well-known; `docker-proxy` in LXD dev |
+  | 5252 | Tailscale web client (off now) | `tailscale debug prefs`: `RunWebClient false` |
+  | 5900 | VNC/SPICE of the `haos` VM when libvirt gives it a display (first autoport) | libvirt default; `haos.xml` needs sudo |
+  | 6379 | Redis (dogchef, in the container) | well-known; `docker-proxy` in LXD dev |
+  | 6768 | Orca runtime (`0.0.0.0`) | `ss -ltnp`: `orca-ide` |
+  | 7070 | evcc's default UI port | well-known (evcc runs in the HA VM / on the Pi) |
+  | 8080 | Pi-hole web admin (`127.0.0.1`) | `curl`: `302 /admin/login`; `PIHOLE_WEB_PORT_HTTP` |
+  | 8123 | Home Assistant (in the `haos` VM) | well-known |
+  | 8443 | Pi-hole HTTPS admin / LXD API (both off now) | `PIHOLE_WEB_PORT_HTTPS`; `lxc config get core.https_address` empty |
+  | 8887 | OCPP from the wallbox, DNATed to the HA VM | `/etc/nucbox-nat.nft` |
+  | 9090 | Cockpit | `systemctl list-sockets`: `cockpit.socket` |
+
+  A new service on the box in that range: add its port to `DENY`, then `./caddy-previews.sh`.
+- Check (no sudo, the box's caddy): `node --test nucbox/tests/previews.test.mjs` runs Caddy as you on a
+  high port with the rendered config, the real login and a test upstream.
+- Undo: `sudo cp -p /etc/caddy/Caddyfile.bak /etc/caddy/Caddyfile && sudo systemctl restart caddy`
+  (right after the run), or delete the `*.preview.CADDY_DOMAIN { ... }` block by hand and restart.
 
 ### Orca
 

@@ -13,31 +13,7 @@ set -euo pipefail
 # $1 = current Caddyfile, $2 = where to write the result; $PW is the identity's `bcrypt:<cost>:<hash>`
 render() {
   local mid; mid=$(mktemp)
-  python3 "$HERE/caddy_edit.py" security "$1" "$mid" <<EOF || { rm -f "$mid"; return 1; }
-	security {
-		local identity store localdb {
-			realm local
-			path /var/lib/caddy/authcrunch/users.json
-			user $EVERON_USER {
-				name "$EVERON_USER"
-				email $EVERON_USER@${EVERON_HOST#*.}
-				password "$PW"
-				roles authp/admin
-			}
-		}
-		authentication portal everonportal {
-			crypto default token lifetime 43200
-			crypto key sign-verify {env.AUTHP_SHARED_KEY}
-			enable identity store localdb
-			trust login redirect uri domain exact $EVERON_HOST path prefix /
-		}
-		authorization policy everonpolicy {
-			set auth url /auth/
-			crypto key verify {env.AUTHP_SHARED_KEY}
-			allow roles authp/admin
-		}
-	}
-EOF
+  security_block | python3 "$HERE/caddy_edit.py" security "$1" "$mid" || { rm -f "$mid"; return 1; }
   python3 "$HERE/caddy_edit.py" site "$mid" "$2" everon <<EOF || { rm -f "$mid"; return 1; }
 	@everon host $EVERON_HOST
 	handle @everon {
@@ -83,9 +59,7 @@ if [[ ${1:-} == --print ]]; then
   baseline example.com >"$old"; render "$old" "$new"; cat "$new"; rm -f "$old" "$new"; exit 0
 fi
 
-sudo -v
-sudo cat "$LIVE" >"$old"
-PW=$(grep -oE 'password "bcrypt:[0-9]+:[^"]+"' "$old" | head -1 | cut -d'"' -f2 || true)
+read_live "$old"
 if [[ -z $PW ]]; then
   say "new password for $EVERON_USER:"
   hash=$(caddy hash-password | tail -1)
