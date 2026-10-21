@@ -343,10 +343,14 @@ apps have no login in front of them; they rely on the Tailscale ACL below and on
   `.git/info/exclude`, never committed, and read by `make start` (compose loads an override next to
   `docker-compose.yml` by itself). MySQL and Redis stay on 127.0.0.1.
 - **sshd** (inside): `/etc/ssh/sshd_config.d/10-dev-lan.conf` (publickey only, no root,
-  `AllowUsers fabio`, local forwards to `127.0.0.1:3306` only, no X11), `ssh.service` enabled and
-  `ssh.socket` off. The script adds the box's own key (`~/.ssh/id_ed25519.pub`) to the container's
+  `AllowUsers fabio`, TCP forwards to `127.0.0.1:3306` only, no socket forwards, no X11),
+  `ssh.service` enabled and `ssh.socket` off. The key also gives a shell as fabio, who is in the
+  docker group, so whoever holds it is root in the container in effect: the forward limits are only a
+  second layer. sshd listens on every address, but the same table drops 22 arriving on any interface
+  but `eth0` and `lo` (the Docker bridges, `CloudflareWARP`). The script adds the box's own key (`~/.ssh/id_ed25519.pub`) to the container's
   `~fabio/.ssh/authorized_keys` with `from="<box address>"`; the Mac's key is added from the Mac (below).
-- **IPv6**: the container's `eth0` has only a link-local address; 22/80/443 over it time out too.
+- **IPv6**: the drop rule matches no address family, so 22/80/443 over IPv6 time out on any
+  address `eth0` has or gets (today only a link-local one).
 - **After a reboot** the filter and sshd come up with the container (`boot.autostart`), the LAN ports
   with `devbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
   `.69` before `.54`): reserve it in the router for its MAC (`lxc config get dev volatile.eth0.hwaddr`).

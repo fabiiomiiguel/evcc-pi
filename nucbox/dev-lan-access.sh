@@ -22,6 +22,11 @@ table inet dev_lan {
     iifname "eth0" tcp dport { 22, 80, 443 } ip saddr $BOX_IP counter accept
     iifname "eth0" tcp dport { 22, 80, 443 } counter drop
   }
+  # sshd itself listens everywhere: the Docker bridges and WARP must not reach it
+  chain input {
+    type filter hook input priority 0; policy accept;
+    iifname != { "eth0", "lo" } tcp dport 22 counter drop
+  }
 }
 EOF
 # dev-proxy binds the LAN address by number: with this it still starts if DHCP moves the container
@@ -58,6 +63,7 @@ AuthenticationMethods publickey
 AllowUsers fabio
 AllowTcpForwarding local
 PermitOpen 127.0.0.1:3306
+AllowStreamLocalForwarding no
 X11Forwarding no
 EOF
 install -d -m 755 /run/sshd   # sshd -t wants it; the service creates it itself
