@@ -179,6 +179,8 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
 ./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
 ./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
+./dev-lan-access.sh               # LXD dev: firewall, key-only sshd, dev-proxy on its LAN address (no sudo)
+./pihole-test-dns.sh              # Pi-hole answers *.test with LXD dev's address
 ```
 
 ### Caddy
@@ -268,7 +270,8 @@ by hand when they change.
 The `dev` repo's compose binds `127.0.0.1:80/443`, which the box's Caddy already holds on every
 address, and the repo is shared, so it runs unchanged in an LXD system container `dev` with its own
 Docker and its own LAN address. Everything dogchef (repos of the `dogchef-be` org) goes through
-`devbox`; nothing of it runs on the host, and the apps are only opened from inside the box.
+`devbox`; nothing of it runs on the host. The apps open inside the box and, through the NucBox only,
+from the Mac ([below](#dogchef-apps-and-db-from-the-mac)).
 
 ```bash
 lxd init --preseed <<'EOF'          # dir pool, no managed network (no lxdbr0, whose dnsmasq would want :53)
@@ -289,8 +292,8 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
 - Create the user before adding the `projects` disk: the mount creates `/home/fabio` as root and
   `usermod -m` then fails. Copy `~/.gitconfig`, the GitHub key and its `known_hosts` lines into the
   container's home; the mkcert CA comes from the Mac's `dev/.config/mkcert`.
-- The image's sshd is disabled and masked (`systemctl mask ssh.socket ssh.service` inside): `devbox`
-  uses `lxc exec`, so the container listens on nothing on the LAN.
+- `devbox` uses `lxc exec`, not ssh. The container's sshd (key-only) and dev-proxy's LAN ports exist
+  for the Mac and are reachable from the NucBox's address only (`dev-lan-access.sh`, below).
 - `devbox` (`lxc exec … sudo -u fabio -H bash -l`) runs in the current directory as fabio with the
   `docker` group; `lxc exec --user` alone gives gid 0 and no supplementary groups.
 - `br0` traffic does not go through ufw only because `br_netfilter` is not loaded
@@ -298,8 +301,9 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
   `/etc/sysctl.d/99-br0.conf` sets `net.bridge.bridge-nf-call-ip{,6}tables=0` at boot, and an
   `install br_netfilter` line in `/etc/modprobe.d/br0.conf` applies it whenever the module is loaded
   later (Ubuntu ships no udev rule for that, and the keys do not exist until the module is in).
-- `*.test` resolves only inside the container (the stack's own dnsmasq). The host's glibc asks
-  Pi-hole and never reads systemd-resolved (`hosts: files mymachines dns`, stub listener off).
+- Inside the container `*.test` is the stack's own dnsmasq (127.0.0.1). The host's glibc asks
+  Pi-hole and never reads systemd-resolved (`hosts: files mymachines dns`, stub listener off), so on
+  the host and the Mac `*.test` is Pi-hole's answer: the container's LAN address (`pihole-test-dns.sh`).
 - The dev DB cluster is private AWS (172.31.x), reached through Cloudflare WARP, org `dogchef`,
   installed and registered inside the container only (`pkg.cloudflareclient.com`, then
   `warp-cli registration new dogchef`). The login token from `https://dogchef.cloudflareaccess.com/warp`
@@ -311,6 +315,84 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
 - The `dev` repo's MCP servers run on the host with Claude Code: `uv`, the AWS CLI and the Google Cloud
   SDK live under `~/.local` and `~/google-cloud-sdk` (no sudo), `~/.bashrc` exports
   `GITHUB_PERSONAL_ACCESS_TOKEN` from `gh auth token`, and the AWS/gcloud logins are yours.
+
+### dogchef apps and DB from the Mac
+
+The apps open by their own `https://<app>.test` names (they call each other by those names, e.g.
+`APP_URL=https://backend.test`), and the dev MySQL through an SSH tunnel. Same reach as Everon: the
+LAN and the tailnet only, plus a key.
+
+```bash
+./dev-lan-access.sh     # on the box, no sudo (lxc exec): container firewall, sshd, dev-proxy on the LAN address
+./pihole-test-dns.sh    # on the box, sudo: Pi-hole answers *.test with the container's address
+```
+
+- **Path**: Mac → tailnet (split DNS `test` → the NucBox's Pi-hole, set in the Tailscale admin) →
+  the NucBox as subnet router, which SNATs tailnet clients to its own LAN address
+  (`tailscale debug prefs`: `"NoSNAT": false`) → the container's `eth0`.
+- **Firewall** (inside the container): table `inet dev_lan`, hook prerouting at priority -150, accepts
+  tcp 22/80/443 on `eth0` from the NucBox's address and drops them from anything else (IPv6 included).
+  Prerouting, because Docker DNATs its published ports there and they never reach an input chain. Its
+  own unit `dev-lan-filter.service` (enabled, before `network-pre.target`) loads
+  `/etc/nftables-dev-lan.nft`; the stock `nftables.service` stays off because its stop flushes the
+  whole ruleset, Docker's and WARP's included. Measured: from a throwaway LXD container on `br0`
+  80/443/22 time out and the drop counter rises, while the box gets through.
+- **dev-proxy** keeps `127.0.0.1:80/443` and also publishes on the container's LAN address, from
+  `docker-compose.override.yml` in the `dev` repo: written by the script, listed in the repo's
+  `.git/info/exclude`, never committed, and read by `make start` (compose loads an override next to
+  `docker-compose.yml` by itself). MySQL and Redis stay on 127.0.0.1.
+- **sshd** (inside): `/etc/ssh/sshd_config.d/10-dev-lan.conf` (publickey only, no root,
+  `AllowUsers fabio`), `ssh.service` enabled and `ssh.socket` off. The script adds the box's own key
+  (`~/.ssh/id_ed25519.pub`) to the container's `~fabio/.ssh/authorized_keys`; the Mac's key is added
+  from the Mac (below).
+- **After a reboot** the filter and sshd come up with the container (`boot.autostart`), the LAN ports
+  with `devbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
+  `.69` before `.54`): reserve it in the router for its MAC (`lxc config get dev volatile.eth0.hwaddr`),
+  or run both scripts again after a change.
+- **Tailscale ACL**: the subnet route makes the container reachable by every device in the tailnet. If
+  the policy still has the default `{"action": "accept", "src": ["*"], "dst": ["*:*"]}`, replace that
+  rule with these two (the second is the same reach for everyone else, minus the container's address):
+
+  ```json
+  {"action": "accept", "src": ["<your login, e.g. you@github>"], "dst": ["*:*"]},
+  {"action": "accept", "src": ["*"], "dst": [
+    "autogroup:internet:*", "100.64.0.0/10:*", "fd7a:115c:a1e0::/48:*",
+    "192.168.68.0/27:*", "192.168.68.32/28:*", "192.168.68.48/30:*", "192.168.68.52/31:*",
+    "192.168.68.55/32:*", "192.168.68.56/29:*", "192.168.68.64/26:*", "192.168.68.128/25:*",
+    "192.168.69.0/24:*", "192.168.70.0/23:*"]}
+  ```
+
+On the Mac, once:
+
+```bash
+# the Mac's key into the container (password login is off)
+ssh <nucbox> "lxc exec dev -- sudo -u fabio -H sh -c 'cat >> ~/.ssh/authorized_keys'" < ~/.ssh/id_ed25519.pub
+dig +short backend.test        # with Tailscale on: the container's address
+```
+
+Then open `https://<app>.test` and accept the certificate warning (the stack's mkcert CA is not on
+the Mac). Do it once per host the page calls too, e.g. open `https://backend.test` directly first:
+a page's own calls to another `.test` host fail silently until that host's warning is accepted.
+With Cloudflare WARP on, the Mac's DNS skips Pi-hole; turn WARP off or put the hosts in `/etc/hosts`.
+
+The DB:
+
+```bash
+ssh -N -L 3306:127.0.0.1:3306 fabio@192.168.68.54   # 13306:127.0.0.1:3306 if the Mac has its own MySQL
+```
+
+and point the client at host `127.0.0.1`, port `3306`, user `root`, with the password from the `dev`
+repo's `docker-compose.yml` (`MYSQL_ROOT_PASSWORD`).
+
+Rollback:
+
+```bash
+lxc exec dev -- systemctl disable --now dev-lan-filter.service ssh.service
+lxc exec dev -- rm /etc/systemd/system/dev-lan-filter.service /etc/nftables-dev-lan.nft /etc/ssh/sshd_config.d/10-dev-lan.conf
+lxc exec dev -- systemctl mask ssh.socket ssh.service
+cd ~/Projects/dogchef/dev && rm docker-compose.override.yml && devbox docker compose -p fresh-chef up -d --no-deps proxy
+sudo pihole-FTL --config misc.dnsmasq_lines   # then set the list again without the address=/test/ line
+```
 
 ### Orca clients
 
