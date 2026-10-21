@@ -168,7 +168,7 @@ no reason — and every renewal sends the account password to the login service.
 its own Caddy, plus its own clones of `~/Projects` and the dogchef `dev` stack in an LXD container. That Caddy is not the Pi's (`setup-pi.py`: internal
 CA, evcc/Pi-hole/Cockpit): it gets public certificates for a wildcard through Cloudflare's DNS
 challenge and puts a login page in front of Everon. Values come from the same `.env` (`NUCBOX`,
-`CADDY_DOMAIN`, `ORCA_HOST`, `ORCA_PORT`, `EVERON_HOST`, `EVERON_USER`, `LAN_CIDR`; see
+`CADDY_DOMAIN`, `PREVIEW_DOMAIN`, `ORCA_HOST`, `ORCA_PORT`, `EVERON_HOST`, `EVERON_USER`, `LAN_CIDR`; see
 `.env.example`).
 
 ```bash
@@ -178,10 +178,11 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 ./install-orca.sh [orca.deb]      # installs orca-ide from the .deb if missing; renders orca.service, linger, starts it
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
 ./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
-./caddy-previews.sh               # https://<port>.preview.CADDY_DOMAIN -> 127.0.0.1:<port>, behind the login
+./caddy-previews.sh               # https://<port>.PREVIEW_DOMAIN -> 127.0.0.1:<port>, tailnet only, no login
 ./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
 ./dev-lan-access.sh               # LXD dev: firewall, key-only sshd, dev-proxy on its LAN address (no sudo)
 ./pihole-test-dns.sh              # Pi-hole answers *.test with LXD dev's address
+./pihole-dev-dns.sh               # Pi-hole answers *.PREVIEW_DOMAIN with the box's tailnet address
 ```
 
 ### Caddy
@@ -196,16 +197,16 @@ challenge and puts a login page in front of Everon. Values come from the same `.
   (stubbed dry run only, untested on a fresh box)
   and refuses to touch a live Caddyfile that is not the package default.
 - `/etc/caddy/cloudflare.env` (root, 0600; shape in `cloudflare.env.example`) holds
-  `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit), `AUTHP_SHARED_KEY` and `AUTHP_PREVIEW_KEY` (random, sign
-  the Everon and the preview logins' tokens; `caddy-install.sh` generates them). `caddy-cloudflare.conf` is the drop-in
+  `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit) and `AUTHP_SHARED_KEY` (random, signs the Everon login's
+  tokens; `caddy-install.sh` generates it). `caddy-cloudflare.conf` is the drop-in
   (`/etc/systemd/system/caddy.service.d/cloudflare.conf`) that loads it into `caddy.service`.
   Fill the token with `sudoedit`; neither value is ever copied elsewhere.
 - Shape of the Caddyfile (`Caddyfile.template`): global `acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}`,
   one `*.CADDY_DOMAIN` site with a `@name host ...` matcher and `handle @name { ... }` per service, and
   a catch-all `handle { respond ... 404 }` last. `caddy-install.sh` replaces the whole file, only
   when it is the package default (it refuses otherwise); the other `caddy-*.sh` scripts only touch their
-  own matcher and handle, or their own site block for the previews, plus (for the logins) the global
-  `security` block, which both login scripts render the same way (`security_block` in `caddy-lib.sh`), so
+  own matcher and handle, or their own site block for the previews, plus (for the login) the global
+  `security` block (`security_block` in `caddy-lib.sh`), so
   other sites stay as they are.
 - Every script validates as the `caddy` user with the service's environment loaded (`setpriv`; a plain
   `caddy validate` as root misses the env and the `caddy` user's permissions), keeps
@@ -234,29 +235,28 @@ for the message to reach the notification centre.
 
 ### Previews of local dev servers
 
-Any dev server on the box opens at `https://<port>.preview.CADDY_DOMAIN` (tailnet + LAN only), for
-ports 3000-9999 except the denylist: start it on `127.0.0.1:<port>` or `[::1]:<port>` (Caddy tries
-`127.0.0.1` first and `[::1]` when nothing listens there), open the URL, log in once at `login.preview.CADDY_DOMAIN` with the Everon user, and
-every preview opens with that session (12 h). `caddy-previews.sh` adds the `*.preview.CADDY_DOMAIN`
-site and the `previewportal` to the `security` block (run `caddy-install.sh` first, for
-`AUTHP_PREVIEW_KEY`, and `caddy-everon-login.sh`, for the user). The dogchef `.test` apps are a separate
+Any dev server on the box opens at `https://<port>.PREVIEW_DOMAIN` (e.g. `https://4321.dev.example.com`) from
+the tailnet only, without a login, for ports 3000-9999 except the denylist: start it on `127.0.0.1:<port>`
+or `[::1]:<port>` (Caddy tries `127.0.0.1` first and `[::1]` when nothing listens there) and open the URL.
+`caddy-previews.sh` adds the `*.PREVIEW_DOMAIN` site. The dogchef `.test` apps are a separate
 path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not on `127.0.0.1` here).
 
+- Who gets in: Caddy answers 403 to any source outside `TAILNET_CIDR` (the LAN too), and the name only
+  resolves to the box's tailnet address: `pihole-dev-dns.sh` (sudo) adds `address=/PREVIEW_DOMAIN/<tailscale ip -4>`
+  to Pi-hole, and the Tailscale admin console needs a split DNS route `PREVIEW_DOMAIN` -> the box's
+  tailnet address (like `CADDY_DOMAIN`). No login, so every tailnet device opens every preview: keep the
+  tailnet to your own devices. No public DNS record.
 - Bind to `127.0.0.1` or `::1`, not `0.0.0.0`: tailscale accepts tailnet traffic before ufw (see Orca), so a
-  server on `0.0.0.0` is open to the tailnet and the LAN without the login.
+  server on `0.0.0.0` is open to the tailnet and the LAN directly, on any port, denylist or not.
 - Caddy rewrites `Host` to `localhost:<port>`: Vite (`server.allowedHosts`) and webpack-dev-server
   (`allowedHosts`) refuse other hosts, `localhost` passes; `X-Forwarded-Host` keeps the real name.
   A server that builds absolute URLs from `Host` (redirects) points at `localhost:<port>`; set its
   public URL to the preview's. Websockets (HMR) pass through.
-- The login: own portal and own key, its cookie goes to `*.preview.CADDY_DOMAIN` only. The previewed
-  servers see that cookie (any dev dependency could read it); a key of its own means such a token opens
-  other previews but never Everon, and Everon's cookie (host-only) never reaches a preview. Logout:
-  `https://login.preview.CADDY_DOMAIN/logout`.
-- Certificate: `*.CADDY_DOMAIN` does not cover two labels, so Caddy gets a `*.preview.CADDY_DOMAIN`
-  certificate through the same Cloudflare DNS challenge; no public DNS record. Name resolution: the
-  NucBox Pi-hole's `*.CADDY_DOMAIN` answer already covers `*.preview` (`dig +short 4321.preview.<domain>
-  @127.0.0.1` gave the box's address before this site existed).
-- Refused with a 404 before the login: any label that is not a port in 3000-9999 (`abc`, `2999`, `10000`,
+- Certificate: one `*.PREVIEW_DOMAIN` certificate through the same Cloudflare DNS challenge. With
+  `PREVIEW_DOMAIN` in the same Cloudflare zone as `CADDY_DOMAIN` (e.g. `dev.example.com` and `casa.example.com`, both
+  under the zone `example.com`: `dig SOA <name>` shows it), the token that got `*.CADDY_DOMAIN` covers it (Cloudflare token permissions are
+  per zone).
+- Refused with a 404: any label that is not a port in 3000-9999 (`abc`, `2999`, `10000`,
   `04321`) and the denylist (`DENY` in `caddy-previews.sh`), ports that are never a dev server:
 
   | Port | What | Source |
@@ -276,9 +276,11 @@ path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not 
 
   A new service on the box in that range: add its port to `DENY`, then `./caddy-previews.sh`.
 - Check (no sudo, the box's caddy): `node --test nucbox/tests/previews.test.mjs` runs Caddy as you on a
-  high port with the rendered config, the real login and a test upstream.
+  high port with the rendered config and test upstreams; `node --test nucbox/tests/pihole-dns.test.mjs`
+  runs `pihole-dev-dns.sh` against stubs.
 - Undo: `sudo cp -p /etc/caddy/Caddyfile.bak /etc/caddy/Caddyfile && sudo systemctl restart caddy`
-  (right after the run), or delete the `*.preview.CADDY_DOMAIN { ... }` block by hand and restart.
+  (right after the run), or delete the `*.PREVIEW_DOMAIN { ... }` block by hand and restart; Pi-hole:
+  remove the `address=/PREVIEW_DOMAIN/...` line (`sudo pihole-FTL --config misc.dnsmasq_lines '[...]'`).
 
 ### Orca
 

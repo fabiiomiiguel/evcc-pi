@@ -10,7 +10,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 ssh "$NUCBOX" 'mkdir -p ~/nucbox'
 files=(); for f in "$here"/*; do [[ -f $f ]] && files+=("$f"); done
 scp -q "${files[@]}" "$NUCBOX:nucbox/"
-for n in ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR CADDY_DOMAIN EVERON_HOST EVERON_USER; do
+for n in ORCA_HOST ORCA_PORT LAN_CIDR TAILNET_CIDR CADDY_DOMAIN PREVIEW_DOMAIN EVERON_HOST EVERON_USER; do
   [[ -z ${!n:-} ]] || printf '%s=%q\n' "$n" "${!n}"
 done |
   ssh "$NUCBOX" 'umask 077; cat > ~/nucbox/.env'
