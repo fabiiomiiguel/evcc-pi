@@ -319,8 +319,9 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
 ### dogchef apps and DB from the Mac
 
 The apps open by their own `https://<app>.test` names (they call each other by those names, e.g.
-`APP_URL=https://backend.test`), and the dev MySQL through an SSH tunnel. Same reach as Everon: the
-LAN and the tailnet only, plus a key.
+`APP_URL=https://backend.test`), and the dev MySQL through an SSH tunnel. Not the same guard as
+Everon: the LAN is shut out except the NucBox itself, and the key covers only ssh and the DB. The web
+apps have no login in front of them; they rely on the Tailscale ACL below and on the apps' own login.
 
 ```bash
 ./dev-lan-access.sh     # on the box, no sudo (lxc exec): container firewall, sshd, dev-proxy on the LAN address
@@ -342,13 +343,17 @@ LAN and the tailnet only, plus a key.
   `.git/info/exclude`, never committed, and read by `make start` (compose loads an override next to
   `docker-compose.yml` by itself). MySQL and Redis stay on 127.0.0.1.
 - **sshd** (inside): `/etc/ssh/sshd_config.d/10-dev-lan.conf` (publickey only, no root,
-  `AllowUsers fabio`), `ssh.service` enabled and `ssh.socket` off. The script adds the box's own key
-  (`~/.ssh/id_ed25519.pub`) to the container's `~fabio/.ssh/authorized_keys`; the Mac's key is added
-  from the Mac (below).
+  `AllowUsers fabio`, local forwards to `127.0.0.1:3306` only, no X11), `ssh.service` enabled and
+  `ssh.socket` off. The script adds the box's own key (`~/.ssh/id_ed25519.pub`) to the container's
+  `~fabio/.ssh/authorized_keys` with `from="<box address>"`; the Mac's key is added from the Mac (below).
+- **IPv6**: the container's `eth0` has only a link-local address; 22/80/443 over it time out too.
 - **After a reboot** the filter and sshd come up with the container (`boot.autostart`), the LAN ports
   with `devbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
-  `.69` before `.54`): reserve it in the router for its MAC (`lxc config get dev volatile.eth0.hwaddr`),
-  or run both scripts again after a change.
+  `.69` before `.54`): reserve it in the router for its MAC (`lxc config get dev volatile.eth0.hwaddr`).
+  If it changes anyway, dev-proxy still starts (`net.ipv4.ip_nonlocal_bind=1` in the container lets it
+  bind the old address), but the apps are only reachable from the Mac again after running **both**
+  scripts: `dev-lan-access.sh` (new address in the override, filter and key) and `pihole-test-dns.sh`
+  (new `*.test` answer).
 - **Tailscale ACL**: the subnet route makes the container reachable by every device in the tailnet. If
   the policy still has the default `{"action": "accept", "src": ["*"], "dst": ["*:*"]}`, replace that
   rule with these two (the second is the same reach for everyone else, minus the container's address):
@@ -366,7 +371,7 @@ On the Mac, once:
 
 ```bash
 # the Mac's key into the container (password login is off)
-ssh <nucbox> "lxc exec dev -- sudo -u fabio -H sh -c 'cat >> ~/.ssh/authorized_keys'" < ~/.ssh/id_ed25519.pub
+ssh <nucbox> "lxc exec dev -- sudo -u fabio -H sh -c 'k=\$(cat); grep -qxF \"\$k\" ~/.ssh/authorized_keys || echo \"\$k\" >> ~/.ssh/authorized_keys'" < ~/.ssh/id_ed25519.pub
 dig +short backend.test        # with Tailscale on: the container's address
 ```
 
@@ -384,13 +389,14 @@ ssh -N -L 3306:127.0.0.1:3306 fabio@192.168.68.54   # 13306:127.0.0.1:3306 if th
 and point the client at host `127.0.0.1`, port `3306`, user `root`, with the password from the `dev`
 repo's `docker-compose.yml` (`MYSQL_ROOT_PASSWORD`).
 
-Rollback:
+Rollback, in this order (the LAN ports close before the filter goes, so 80/443 are never open to the LAN):
 
 ```bash
-lxc exec dev -- systemctl disable --now dev-lan-filter.service ssh.service
-lxc exec dev -- rm /etc/systemd/system/dev-lan-filter.service /etc/nftables-dev-lan.nft /etc/ssh/sshd_config.d/10-dev-lan.conf
-lxc exec dev -- systemctl mask ssh.socket ssh.service
 cd ~/Projects/dogchef/dev && rm docker-compose.override.yml && devbox docker compose -p fresh-chef up -d --no-deps proxy
+lxc exec dev -- systemctl disable --now dev-lan-filter.service ssh.service
+lxc exec dev -- rm /etc/systemd/system/dev-lan-filter.service /etc/nftables-dev-lan.nft /etc/ssh/sshd_config.d/10-dev-lan.conf /etc/sysctl.d/60-dev-lan.conf
+lxc exec dev -- sysctl -w net.ipv4.ip_nonlocal_bind=0
+lxc exec dev -- systemctl mask ssh.socket ssh.service
 sudo pihole-FTL --config misc.dnsmasq_lines   # then set the list again without the address=/test/ line
 ```
 

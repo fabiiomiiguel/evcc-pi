@@ -24,6 +24,10 @@ table inet dev_lan {
   }
 }
 EOF
+# dev-proxy binds the LAN address by number: with this it still starts if DHCP moves the container
+echo net.ipv4.ip_nonlocal_bind=1 >/etc/sysctl.d/60-dev-lan.conf
+sysctl -q -p /etc/sysctl.d/60-dev-lan.conf
+
 # own unit: the stock nftables.service flushes the whole ruleset (Docker's, WARP's) on stop
 cat >/etc/systemd/system/dev-lan-filter.service <<'EOF'
 [Unit]
@@ -52,6 +56,9 @@ KbdInteractiveAuthentication no
 PermitRootLogin no
 AuthenticationMethods publickey
 AllowUsers fabio
+AllowTcpForwarding local
+PermitOpen 127.0.0.1:3306
+X11Forwarding no
 EOF
 install -d -m 755 /run/sshd   # sshd -t wants it; the service creates it itself
 sshd -t
@@ -61,10 +68,11 @@ systemctl enable ssh.service
 systemctl restart ssh.service
 IN
 
-# the box's own key, so it can check the way in; the Mac's key is added from the Mac
-lxc exec dev -- sudo -u fabio -H bash -c \
-  'k=$(cat); grep -qxF "$k" ~/.ssh/authorized_keys 2>/dev/null || printf "%s\n" "$k" >>~/.ssh/authorized_keys' \
-  <"$HOME/.ssh/id_ed25519.pub"
+# the box's own key, usable from the box only, so it can check the way in; the Mac's key is added from the Mac
+lxc exec dev -- sudo -u fabio -H bash -c 'umask 077; f=~/.ssh/authorized_keys; k=$(cat); line="from=\"$1\" $k"
+  grep -qxF "$line" "$f" 2>/dev/null && exit 0
+  body=$(cut -d" " -f2 <<<"$k"); { grep -vF "$body" "$f" 2>/dev/null || true; echo "$line"; } >"$f.new" && mv "$f.new" "$f"' \
+  _ "$BOX_IP" <"$HOME/.ssh/id_ed25519.pub"
 
 cat >"$DEV_REPO/docker-compose.override.yml" <<EOF
 # local only (nucbox/dev-lan-access.sh in evcc-pi): dev-proxy also on the LXD container's LAN address
