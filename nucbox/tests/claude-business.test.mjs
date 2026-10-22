@@ -86,3 +86,28 @@ test("a real settings.json in ~/.claude-business is not replaced", () => {
     assert.match(out, /settings\.json.*left alone/);
   } finally { t.done(); }
 });
+
+// Ubuntu's default shapes: .bashrc returns early when non-interactive, .profile sources it then prepends ~/.local/bin.
+test("claude resolves to the wrapper in login, interactive login and interactive bash; second run identical", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.home, ".bashrc"), "case $- in\n    *i*) ;;\n      *) return;;\nesac\nalias a=b\n");
+    writeFileSync(join(t.home, ".profile"), [
+      'if [ -n "$BASH_VERSION" ]; then',
+      '    if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi',
+      "fi",
+      'if [ -d "$HOME/.local/bin" ] ; then PATH="$HOME/.local/bin:$PATH"; fi', ""].join("\n"));
+    mkdirSync(join(t.home, ".local/bin"), { recursive: true });
+    writeFileSync(join(t.home, ".local/bin/claude"), "#!/bin/sh\n");
+    chmodSync(join(t.home, ".local/bin/claude"), 0o755);
+    t.run();
+    const want = join(t.home, ".local/claude-wrap/claude");
+    for (const flags of ["-lc", "-ilc", "-ic"]) {
+      const out = execFileSync("bash", [flags, "command -v claude"], { encoding: "utf8", env: { HOME: t.home, PATH: "/usr/bin:/bin" } });
+      assert.equal(out.trim(), want, flags);
+    }
+    const before = [t.read(".profile"), t.read(".bashrc")];
+    t.run();
+    assert.deepEqual([t.read(".profile"), t.read(".bashrc")], before);
+  } finally { t.done(); }
+});

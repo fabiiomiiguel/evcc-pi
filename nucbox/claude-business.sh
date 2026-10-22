@@ -9,6 +9,7 @@ CLAUDE_HOME=${CLAUDE_HOME:-$HOME/.claude}
 BUSINESS_DIR=${BUSINESS_DIR:-$HOME/.claude-business}
 DOGCHEF_DIR=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
 BASHRC=${BASHRC:-$HOME/.bashrc}
+PROFILE=${PROFILE:-$HOME/.profile}
 WRAP_DIR=${WRAP_DIR:-$HOME/.local/claude-wrap}
 export_line='export CLAUDE_CONFIG_DIR="$HOME/.claude-business"'
 hook_line='eval "$(direnv hook bash)"'
@@ -33,6 +34,14 @@ mkdir -p "$WRAP_DIR"
 install -m 755 "$(dirname "$0")/claude-wrap" "$WRAP_DIR/claude"; say "wrapper installed in $WRAP_DIR"
 if grep -qxF "$path_line" "$BASHRC"; then say "wrapper PATH already in $BASHRC"; else
   printf '%s\n' "$path_line" >> "$BASHRC"; say "wrapper PATH added to $BASHRC"
+fi
+
+# ~/.bashrc is skipped by non-interactive shells and ~/.profile prepends ~/.local/bin after it, so a block at the
+# end of ~/.profile puts the wrapper first for login shells too (Orca builds its agents' PATH from one)
+profile_mark='# claude-wrap PATH (claude-business.sh)'
+if grep -qxF "$profile_mark" "$PROFILE" 2>/dev/null; then say "wrapper PATH already in $PROFILE"; else
+  printf '\n%s\ncase ":$PATH:" in ":$HOME/.local/claude-wrap:"*) ;; *) export PATH="$HOME/.local/claude-wrap:$PATH" ;; esac\n' "$profile_mark" >> "$PROFILE"
+  say "wrapper PATH added to $PROFILE"
 fi
 
 mkdir -p "$BUSINESS_DIR"

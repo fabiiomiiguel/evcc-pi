@@ -332,7 +332,7 @@ password from user".
 
 `bash nucbox/claude-business.sh` makes Claude Code use the business account in dogchef and the personal one
 everywhere else. The rule is the wrapper `nucbox/claude-wrap`, installed as `~/.local/claude-wrap/claude` and put
-first on PATH (in `~/.bashrc` and in `orca.service`): when `CLAUDE_CONFIG_DIR` is not set and the directory is under
+first on PATH (a line in `~/.bashrc` for interactive shells, a marked block at the end of `~/.profile` because non-interactive login shells skip `~/.bashrc` and `~/.profile` itself prepends `~/.local/bin`, which Orca's agents inherit, and in `orca.service`): when `CLAUDE_CONFIG_DIR` is not set and the directory is under
 `~/Projects/dogchef` or a git repo whose `origin` is in `dogchef-be/` (so Orca worktrees too), it sets
 `CLAUDE_CONFIG_DIR=~/.claude-business`, then execs the real `~/.local/bin/claude`. The script also creates
 `~/.claude-business` with `CLAUDE.md`, `settings.json`, `skills` and `plugins` symlinked to `~/.claude` (an existing
@@ -341,7 +341,7 @@ real file there is left alone) and cleans the old direnv setup (the hook line in
 `sudo apt remove direnv`). Safe to run again. Then, in a new shell, `cd ~/Projects/dogchef/dev && claude`, `/login`
 with the business account, `/status` to confirm. Orca only gets the wrapper after its unit is re-rendered and
 restarted (ends running agents): `bash nucbox/install-orca.sh && systemctl --user restart orca.service`. Undo: remove
-the PATH line in `~/.bashrc`, `~/.local/claude-wrap`, `~/.claude-business`, and re-render the unit. Tests:
+the PATH line in `~/.bashrc`, the marked block in `~/.profile`, `~/.local/claude-wrap`, `~/.claude-business`, and re-render the unit. Tests:
 `node --test nucbox/tests/claude-business.test.mjs nucbox/tests/claude-wrap.test.mjs`.
 
 ### Projects on the box
