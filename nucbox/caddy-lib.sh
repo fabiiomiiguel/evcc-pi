@@ -102,9 +102,18 @@ restart_or_restore() {
   sudo cp -p "$1" "$2"; sudo systemctl restart caddy || true; die "caddy did not start; restored $1"
 }
 
+# prints a new random 64-hex key; refuses anything else (a failed openssl must never become an empty key)
+new_key() {
+  local k
+  k=$(openssl rand -hex 32) || true
+  [[ $k =~ ^[0-9a-f]{64}$ ]] || die "openssl did not give a 64-hex key"
+  echo "$k"
+}
+
 # $1 = an environment file, $2 = where to write it with a new random AUTHP_PREVIEW_KEY (every other line kept).
 # The key goes through the environment, never argv or stdout.
 rotate_preview_key() {
   grep -q '^AUTHP_PREVIEW_KEY=' "$1" || die "no AUTHP_PREVIEW_KEY in $1"
-  K=$(openssl rand -hex 32) awk '/^AUTHP_PREVIEW_KEY=/ { print "AUTHP_PREVIEW_KEY=" ENVIRON["K"]; next } 1' "$1" >"$2"
+  local k; k=$(new_key) || return 1
+  K=$k awk '/^AUTHP_PREVIEW_KEY=/ { print "AUTHP_PREVIEW_KEY=" ENVIRON["K"]; next } 1' "$1" >"$2"
 }

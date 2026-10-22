@@ -28,7 +28,7 @@ fi
 
 if ! sudo test -f "$ENVF"; then sudo install -m 600 -o root -g root "$HERE/cloudflare.env.example" "$ENVF"; fi
 for k in AUTHP_SHARED_KEY AUTHP_PREVIEW_KEY; do
-  sudo grep -q "^$k=" "$ENVF" || echo "$k=$(openssl rand -hex 32)" | sudo tee -a "$ENVF" >/dev/null
+  sudo grep -q "^$k=" "$ENVF" || { v=$(new_key) && echo "$k=$v" | sudo tee -a "$ENVF" >/dev/null; }
 done
 sudo grep -q '^CLOUDFLARE_API_TOKEN=.' "$ENVF" || say "put the token in: sudoedit $ENVF"
 

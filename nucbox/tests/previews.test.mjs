@@ -4,8 +4,8 @@
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -213,4 +213,16 @@ test("rotating the previews' key ends every preview session, not Everon's; a fre
   const fresh = {};
   await login(`login.${D}`, "", { from: LAN, jar: fresh });
   assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: fresh })).status, 200, "a fresh login works");
+});
+
+test("a failing openssl never writes an empty key: nothing is written, so nothing is restarted", () => {
+  const bin = join(dir, "stub-bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "openssl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const old = join(dir, "env.keep"), out = join(dir, "env.none");
+  writeFileSync(old, "AUTHP_PREVIEW_KEY=abc\n");
+  const r = spawnSync("bash", ["-c", `. "$0"; rotate_preview_key "$1" "$2"`, lib, old, out], { encoding: "utf8", env: { ...env, PATH: `${bin}:${process.env.PATH}` } });
+  assert.notEqual(r.status, 0);
+  assert.equal(existsSync(out), false, "no output file");
+  assert.equal(readFileSync(old, "utf8"), "AUTHP_PREVIEW_KEY=abc\n");
 });
