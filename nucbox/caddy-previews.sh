@@ -3,7 +3,8 @@
 # only, behind the shared login (portal at login.PREVIEW_DOMAIN, one session for every preview). Ports 3000-9999
 # minus DENY; anything else gets 404 before the login. Edits only the global `security` block and the
 # `*.PREVIEW_DOMAIN` site in the live Caddyfile; safe to run again. `--print [Caddyfile]` renders over that file
-# (default: the baseline) and touches nothing. Names resolve through Pi-hole (pihole-dev-dns.sh).
+# (default: the baseline) and touches nothing. `--rotate-key` writes a new AUTHP_PREVIEW_KEY into the service's
+# environment and restarts Caddy: every preview session ends, Everon's stay. Names resolve through Pi-hole (pihole-dev-dns.sh).
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
 . "$(dirname "$0")/caddy-lib.sh"
@@ -50,6 +51,20 @@ EOF
 }
 
 old=$(mktemp); new=$(mktemp)
+if [[ ${1:-} == --rotate-key ]]; then
+  sudo -v
+  sudo grep -q '^AUTHP_PREVIEW_KEY=.' "$ENVF" || { rm -f "$old" "$new"; die "no AUTHP_PREVIEW_KEY in $ENVF: run ./caddy-install.sh"; }
+  sudo cat "$ENVF" >"$old"
+  rotate_preview_key "$old" "$new" || { rm -f "$old" "$new"; exit 1; }
+  validate_as_caddy "$LIVE" "$new" || { rm -f "$old" "$new"; die "invalid with the new key: nothing was changed"; }
+  sudo cp -p "$ENVF" "$ENVF.bak"
+  sudo tee "$ENVF" <"$new" >/dev/null # keeps the file's owner and mode
+  rm -f "$old" "$new"
+  restart_or_restore "$ENVF.bak" "$ENVF"
+  say "new previews key: every preview session ended (Everon's stay); log in again at https://login.$PREVIEW_DOMAIN/"
+  say "the old key is in $ENVF.bak (root, 0600); restoring it would revive the old sessions"
+  exit 0
+fi
 if [[ ${1:-} == --print ]]; then
   PW='bcrypt:14:<hash from caddy hash-password>'
   if [[ -n ${2:-} ]]; then cp "$2" "$old"; else baseline "$CADDY_DOMAIN" >"$old"; fi

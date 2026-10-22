@@ -179,6 +179,7 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
 ./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
 ./caddy-previews.sh               # https://<port>.PREVIEW_DOMAIN -> 127.0.0.1:<port>, tailnet + LAN, shared login
+./caddy-previews.sh --rotate-key  # new previews key: ends every preview session (Everon's stay)
 ./orca-tailnet-block.sh           # drops ORCA_PORT arriving on tailscale0
 ./dev-lan-access.sh               # LXD dev: firewall, key-only sshd, dev-proxy on its LAN address (no sudo)
 ./pihole-test-dns.sh              # Pi-hole answers *.test with LXD dev's address
@@ -243,10 +244,20 @@ path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not 
 
 - Who gets in: Caddy answers 403 to any source outside `TAILNET_CIDR` and `LAN_CIDR`; everyone else
   goes through the login at `https://login.PREVIEW_DOMAIN/` (the Everon user, `EVERON_USER`). One login opens
-  every preview for 8 h (a working day; Everon's is 12 h); logout: `https://login.PREVIEW_DOMAIN/logout`.
+  every preview for 30 days, and the cookie lasts as long, so closing the browser keeps it (Everon's is 12 h);
+  logout: `https://login.PREVIEW_DOMAIN/logout`.
   The previews' portal signs with its own key (`AUTHP_PREVIEW_KEY`) and sets its cookie for
   `PREVIEW_DOMAIN` only, never the parent domain: every dev server sees that cookie, and a token it copies
   is not valid on Everon (and Everon's is not valid here). Orca and Everon stay on `CADDY_DOMAIN`.
+- The catch: a token is a signed bearer token checked only against the key. Code running in any dev server
+  (your own, or a bad npm dependency) receives it and, from the tailnet or the LAN, can replay it on every
+  other preview until it expires, up to 30 days. Logout only deletes the cookie in your browser; a copied
+  token stays valid. The only way to end every session at once is `./caddy-previews.sh --rotate-key`
+  (sudo): it writes a new random `AUTHP_PREVIEW_KEY` into `/etc/caddy/cloudflare.env` (old file kept as
+  `cloudflare.env.bak`, root, 0600; no key is printed), validates, restarts Caddy and restores the old file
+  if Caddy does not come up. Every preview needs the login again; Everon's sessions stay. Rotate after running
+  code you do not trust in a dev server, after a device that was logged in is lost or shared, and when a
+  session should not outlive its use. It is manual, there is no timer.
 - Names: `pihole-dev-dns.sh` (sudo) adds `address=/PREVIEW_DOMAIN/<the box's LAN address>` to Pi-hole, like
   `CADDY_DOMAIN`. Tailnet devices reach it through the split DNS route `PREVIEW_DOMAIN` -> the box's
   tailnet address (Tailscale admin console) and the box's subnet route for `LAN_CIDR`. No public DNS record.

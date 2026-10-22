@@ -5,7 +5,7 @@ import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ const D = "dev.example.com";
 const EVERON = "everon.example.com";
 const previews = fileURLToPath(new URL("../caddy-previews.sh", import.meta.url));
 const everon = fileURLToPath(new URL("../caddy-everon-login.sh", import.meta.url));
+const lib = fileURLToPath(new URL("../caddy-lib.sh", import.meta.url));
 // requests from 127.0.0.1 stand for the tailnet, from [::1] for the LAN, from 127.0.0.2 for anyone else
 const TAILNET = "127.0.0.1", LAN = "::1", OUTSIDER = "127.0.0.2";
 const env = {
@@ -83,13 +84,19 @@ before(async () => {
   upstream6 = http.createServer((q, s) => s.end("ipv6"));
   await new Promise((ok) => upstream6.listen(UP6, "::1", ok));
   writeFileSync(join(dir, "Caddyfile"), config());
-  caddy = spawn("caddy", ["run", "--config", join(dir, "Caddyfile")], { env, stdio: "ignore" });
+  await start(env);
+});
+
+async function start(e) {
+  caddy?.kill();
+  if (caddy) await new Promise((ok) => caddy.once("exit", ok));
+  caddy = spawn("caddy", ["run", "--config", join(dir, "Caddyfile")], { env: e, stdio: "ignore" });
   for (let i = 0; i < 50; i++) {
     if (await req(`${UP}.${D}`).then(() => true, () => false)) return;
     await new Promise((ok) => setTimeout(ok, 100));
   }
   throw new Error("caddy did not start");
-});
+}
 after(() => {
   caddy?.kill();
   upstream?.close();
@@ -128,7 +135,7 @@ test("without a session an allowed port goes to the login, from the LAN and the 
   }
 });
 
-test("one login from the LAN opens every allowed port for 8 h; cookie on PREVIEW_DOMAIN only; websockets pass; logout ends it", async () => {
+test("one login from the LAN opens every allowed port for 30 days; cookie on PREVIEW_DOMAIN only; websockets pass; logout ends it", async () => {
   const jar = {};
   const opts = { from: LAN, jar };
   // the portal only keeps a redirect back to a preview (the browser's URL: https, no port)
@@ -141,8 +148,9 @@ test("one login from the LAN opens every allowed port for 8 h; cookie on PREVIEW
   assert.equal(done.location, back);
   const token = done.cookies.find((c) => c.startsWith("AUTHP_ACCESS_TOKEN="));
   assert.match(token ?? "", new RegExp(`; Domain=${D.replaceAll(".", "\\.")};`), "the cookie is for PREVIEW_DOMAIN, never its parent");
+  assert.match(token ?? "", /; Max-Age=2592000(;|$)/, "the cookie outlives the browser session: 30 days");
   const claims = JSON.parse(Buffer.from(jar.AUTHP_ACCESS_TOKEN.split(".")[1], "base64url").toString());
-  assert.ok(Math.abs(claims.exp - Date.now() / 1000 - 8 * 3600) < 120, `token lifetime 8 h, exp=${claims.exp}`);
+  assert.ok(Math.abs(claims.exp - Date.now() / 1000 - 2592000) < 120, `token lifetime 30 days, exp=${claims.exp}`);
 
   for (const from of [LAN, TAILNET]) {
     const page = await req(`${UP}.${D}`, "/", { from, jar });
@@ -178,4 +186,31 @@ test("tokens do not cross: Everon's is refused on the previews, a preview's on E
   await login(`login.${D}`, "", { from: LAN, jar: pv });
   assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: pv })).status, 200, "the preview token opens the previews");
   assert.notEqual((await req(EVERON, "/", { from: LAN, jar: pv })).status, 200, "a preview token (what a dev server sees) is not an Everon session");
+});
+
+// Last: restarts Caddy with the rotated key. The rotation's sudo part (backup, write, validate, restart, rollback) is in
+// caddy-previews.sh --rotate-key; this checks what it writes and what a restart with it does to the sessions.
+test("rotating the previews' key ends every preview session, not Everon's; a fresh login works", async () => {
+  const ev = {}, pv = {};
+  await login(EVERON, "/auth", { from: LAN, jar: ev });
+  await login(`login.${D}`, "", { from: LAN, jar: pv });
+  assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: pv })).status, 200);
+
+  const before = `# comment\nCLOUDFLARE_API_TOKEN=${env.CLOUDFLARE_API_TOKEN}\nAUTHP_SHARED_KEY=${env.AUTHP_SHARED_KEY}\nAUTHP_PREVIEW_KEY=${env.AUTHP_PREVIEW_KEY}\nOTHER=1\n`;
+  writeFileSync(join(dir, "env.old"), before);
+  const out = execFileSync("bash", ["-c", `. "$0"; rotate_preview_key "$1" "$2"`, lib, join(dir, "env.old"), join(dir, "env.new")], { encoding: "utf8", env });
+  assert.equal(out, "", "prints no secret");
+  const after = readFileSync(join(dir, "env.new"), "utf8");
+  const key = after.match(/^AUTHP_PREVIEW_KEY=(.*)$/m)?.[1] ?? "";
+  assert.match(key, /^[0-9a-f]{64}$/);
+  assert.notEqual(key, env.AUTHP_PREVIEW_KEY);
+  assert.equal(after, before.replace(env.AUTHP_PREVIEW_KEY, key), "every other line kept");
+
+  // Caddy gets what the rotated file holds, as the service would
+  await start({ ...env, ...Object.fromEntries(after.split("\n").filter((l) => /^[A-Z_]+=/.test(l)).map((l) => l.split("="))) });
+  assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: pv })).status, 302, "the old preview token is refused");
+  assert.equal((await req(EVERON, "/", { from: LAN, jar: ev })).status, 200, "Everon's session survives");
+  const fresh = {};
+  await login(`login.${D}`, "", { from: LAN, jar: fresh });
+  assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: fresh })).status, 200, "a fresh login works");
 });
