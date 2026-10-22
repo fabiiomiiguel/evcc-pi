@@ -126,20 +126,30 @@ test("hidden for less than 5 minutes then visible does nothing", () => {
   assert.equal(t.log.reloads, 0);
 });
 
-test("hidden for 5 minutes releases the iframe quietly, visible restores it", async () => {
-  const t = boot(okRes);
-  const url = t.iframe.src;
+test("hidden for 5 minutes logs out and releases the iframe quietly, visible goes to the login", async () => {
+  const t = boot(redirect);
   t.load(); t.setState("connected");
   setHidden(t, true);
   t.timers.shift().fn();
   assert.equal(t.iframe.src, "about:blank");
+  assert.deepEqual(t.log.fetched, ["/auth/logout"]);
   t.load(); t.setState(); // the socket closing while hidden
   await flush(t);
-  assert.deepEqual(t.log.fetched, []);
+  assert.deepEqual(t.log.fetched, ["/auth/logout"]);
   assert.deepEqual(t.log.replaced, []);
   assert.equal(t.log.reloads, 1);
   setHidden(t, false);
-  assert.equal(t.iframe.src, url);
+  assert.deepEqual(t.log.replaced, ["/"]);
+  assert.equal(t.iframe.src, "about:blank");
+});
+
+test("a failed logout while released does not throw and still goes to the login when visible", async () => {
+  const t = boot("fail");
+  setHidden(t, true);
+  t.timers.shift().fn();
+  await flush(t);
+  setHidden(t, false);
+  assert.deepEqual(t.log.replaced, ["/"]);
 });
 
 test("a reconnect retry pending when the tab is released does not reload the iframe", async () => {
