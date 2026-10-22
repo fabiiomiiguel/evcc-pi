@@ -51,6 +51,19 @@ for n in CLAUDE.md settings.json skills plugins; do
   else ln -s "$CLAUDE_HOME/$n" "$BUSINESS_DIR/$n"; say "$n linked"; fi
 done
 
+# The guard runs as a UserPromptSubmit hook in the shared settings (~/.claude-business/settings.json is a symlink to it)
+settings=$CLAUDE_HOME/settings.json
+guard="CLAUDE_WRAP_GUARD=1 $WRAP_DIR/claude"
+if ! command -v jq >/dev/null; then say "jq missing, account guard hook not added to $settings"
+elif jq -e --arg g "$guard" '[.hooks.UserPromptSubmit[]?.hooks[]?.command] | index($g)' "$settings" >/dev/null 2>&1; then say "account guard already in $settings"
+else
+  [[ -e $settings.bak-claude-business ]] || cp "$settings" "$settings.bak-claude-business"
+  tmp=$(mktemp)
+  jq --arg g "$guard" '.hooks.UserPromptSubmit += [{hooks: [{type: "command", command: $g, timeout: 5}]}]' "$settings" > "$tmp" \
+    && cat "$tmp" > "$settings" && say "account guard hook added to $settings (backup: $settings.bak-claude-business)"
+  rm -f "$tmp"
+fi
+
 cat <<MSG
 
 Next: open a new shell (or exec bash), then

@@ -2,10 +2,25 @@
 # Picks the Claude account by where it runs: dogchef repos (origin in dogchef-be/, any worktree location) and
 # ~/Projects/dogchef use ~/.claude-business; the rest keeps the default ~/.claude. A preset CLAUDE_CONFIG_DIR wins.
 # Installed as ~/.local/claude-wrap/claude by claude-business.sh; execs the real binary by absolute path.
-if [[ -z ${CLAUDE_CONFIG_DIR:-} ]]; then
-  dogchef=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
-  if [[ $PWD == "$dogchef" || $PWD == "$dogchef"/* ]] || [[ $(git -C "$PWD" remote get-url origin 2>/dev/null) == *dogchef-be/* ]]; then
-    export CLAUDE_CONFIG_DIR=$HOME/.claude-business
-  fi
+# With CLAUDE_WRAP_GUARD set it is the UserPromptSubmit hook instead: it reads the hook JSON on stdin and exits 2
+# when the session's account is not the one this rule gives its cwd, else 0; any problem exits 0 (fail open).
+is_business_dir() {
+  local dogchef=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
+  [[ $1 == "$dogchef" || $1 == "$dogchef"/* ]] || [[ $(git -C "$1" remote get-url origin 2>/dev/null) == *dogchef-be/* ]]
+}
+if [[ -n ${CLAUDE_WRAP_GUARD:-} ]]; then
+  command -v jq >/dev/null || exit 0
+  cwd=$(jq -r '.cwd // empty' 2>/dev/null) || exit 0
+  [[ -d $cwd ]] || exit 0
+  case $(realpath -m "${CLAUDE_CONFIG_DIR:-$HOME/.claude}") in
+    "$(realpath -m "$HOME/.claude-business")") using=business ;;
+    "$(realpath -m "$HOME/.claude")") using=personal ;;
+    *) exit 0 ;;
+  esac
+  if is_business_dir "$cwd"; then want=business; else want=personal; fi
+  [[ $using == "$want" ]] && exit 0
+  echo "Wrong Claude account: this session uses the $using account but $cwd needs $want. Exit and start claude from a bash terminal in that folder." >&2
+  exit 2
 fi
+if [[ -z ${CLAUDE_CONFIG_DIR:-} ]] && is_business_dir "$PWD"; then export CLAUDE_CONFIG_DIR=$HOME/.claude-business; fi
 exec "$HOME/.local/bin/claude" "$@"

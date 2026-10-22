@@ -341,8 +341,15 @@ real file there is left alone) and cleans the old direnv setup (the hook line in
 `sudo apt remove direnv`). Safe to run again. Then, in a new shell, `cd ~/Projects/dogchef/dev && claude`, `/login`
 with the business account, `/status` to confirm. Orca only gets the wrapper after its unit is re-rendered and
 restarted (ends running agents): `bash nucbox/install-orca.sh && systemctl --user restart orca.service`. Undo: remove
-the PATH line in `~/.bashrc`, the marked block in `~/.profile`, `~/.local/claude-wrap`, `~/.claude-business`, and re-render the unit. Tests:
-`node --test nucbox/tests/claude-business.test.mjs nucbox/tests/claude-wrap.test.mjs`.
+the PATH line in `~/.bashrc`, the marked block in `~/.profile`, `~/.local/claude-wrap`, `~/.claude-business`, the
+`UserPromptSubmit` entry whose command is `CLAUDE_WRAP_GUARD=1 ~/.local/claude-wrap/claude` in `~/.claude/settings.json`
+(the first run saved `settings.json.bak-claude-business` next to it), and re-render the unit.
+
+Account guard: a `UserPromptSubmit` hook (the wrapper itself run with `CLAUDE_WRAP_GUARD=1`, which never starts claude; needs `jq`)
+applies the wrapper's own rule to the session's `cwd`. When the session's account
+(`CLAUDE_CONFIG_DIR` pointing at `~/.claude-business`, or unset/`~/.claude`) is not the one expected, it blocks the prompt
+with a message; exit and start `claude` from a bash terminal in that folder. Any internal error lets the prompt through.
+Tests: `node --test nucbox/tests/claude-business.test.mjs nucbox/tests/claude-wrap.test.mjs nucbox/tests/claude-guard.test.mjs`.
 
 ### Projects on the box
 
