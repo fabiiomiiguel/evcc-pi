@@ -330,18 +330,18 @@ password from user".
 
 ### Claude business account for dogchef
 
-`bash nucbox/claude-business-direnv.sh` makes Claude Code use the business account in dogchef and the personal one
+`bash nucbox/claude-business.sh` makes Claude Code use the business account in dogchef and the personal one
 everywhere else. The rule is the wrapper `nucbox/claude-wrap`, installed as `~/.local/claude-wrap/claude` and put
 first on PATH (in `~/.bashrc` and in `orca.service`): when `CLAUDE_CONFIG_DIR` is not set and the directory is under
 `~/Projects/dogchef` or a git repo whose `origin` is in `dogchef-be/` (so Orca worktrees too), it sets
-`CLAUDE_CONFIG_DIR=~/.claude-business`, then execs the real `~/.local/bin/claude`. The script also installs `direnv`
-if missing, adds its hook to `~/.bashrc`, creates `~/.claude-business` with `CLAUDE.md`, `settings.json`, `skills` and
-`plugins` symlinked to `~/.claude` (an existing real file there is left alone), puts the export in
-`~/Projects/dogchef/.envrc` (a second path, harmless) and runs `direnv allow`. Safe to run again. Then, in a new shell,
-`cd ~/Projects/dogchef/dev && claude`, `/login` with the business account, `/status` to confirm. Orca only gets the
-wrapper after its unit is re-rendered and restarted (ends running agents):
-`bash nucbox/install-orca.sh && systemctl --user restart orca.service`. Undo: remove the `.envrc` line, the hook and
-PATH lines in `~/.bashrc`, `~/.local/claude-wrap`, `~/.claude-business`, and re-render the unit. Tests:
+`CLAUDE_CONFIG_DIR=~/.claude-business`, then execs the real `~/.local/bin/claude`. The script also creates
+`~/.claude-business` with `CLAUDE.md`, `settings.json`, `skills` and `plugins` symlinked to `~/.claude` (an existing
+real file there is left alone) and cleans the old direnv setup (the hook line in `~/.bashrc`, the export in
+`~/Projects/dogchef/.envrc`, the file itself if nothing else is in it; the `direnv` package stays, remove it with
+`sudo apt remove direnv`). Safe to run again. Then, in a new shell, `cd ~/Projects/dogchef/dev && claude`, `/login`
+with the business account, `/status` to confirm. Orca only gets the wrapper after its unit is re-rendered and
+restarted (ends running agents): `bash nucbox/install-orca.sh && systemctl --user restart orca.service`. Undo: remove
+the PATH line in `~/.bashrc`, `~/.local/claude-wrap`, `~/.claude-business`, and re-render the unit. Tests:
 `node --test nucbox/tests/claude-business.test.mjs nucbox/tests/claude-wrap.test.mjs`.
 
 ### Projects on the box

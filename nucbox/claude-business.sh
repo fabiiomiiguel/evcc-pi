@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Claude Code runs as the business account in dogchef repos (the claude-wrap wrapper first on PATH picks it; the
-# direnv .envrc in DOGCHEF_DIR is a second path); everywhere else it keeps ~/.claude. The business dir shares CLAUDE.md, settings.json, skills and plugins with ~/.claude by symlink;
-# login is separate. Safe to run again; nothing existing is overwritten or deleted.
+# Claude Code runs as the business account in dogchef repos (the claude-wrap wrapper first on PATH picks it);
+# everywhere else it keeps ~/.claude. The business dir shares CLAUDE.md, settings.json, skills and plugins with
+# ~/.claude by symlink; login is separate. Also cleans the old direnv setup. Safe to run again; nothing else is
+# overwritten or deleted.
 set -euo pipefail
 say() { echo "==> $*"; }
 CLAUDE_HOME=${CLAUDE_HOME:-$HOME/.claude}
@@ -13,10 +14,19 @@ export_line='export CLAUDE_CONFIG_DIR="$HOME/.claude-business"'
 hook_line='eval "$(direnv hook bash)"'
 path_line='export PATH="$HOME/.local/claude-wrap:$PATH"'
 
-if command -v direnv >/dev/null; then say "direnv already installed"; else say "installing direnv"; sudo apt install -y direnv; fi
+# remove one exact line from a file; true when it was there
+drop_line() {
+  grep -qxF "$1" "$2" 2>/dev/null || return 1
+  local tmp; tmp=$(mktemp)
+  grep -vxF "$1" "$2" > "$tmp" || true
+  cat "$tmp" > "$2"; rm -f "$tmp"
+}
 
-if grep -qsF 'direnv hook bash' "$BASHRC"; then say "direnv hook already in $BASHRC"; else
-  printf '%s\n' "$hook_line" >> "$BASHRC"; say "direnv hook added to $BASHRC"
+if drop_line "$hook_line" "$BASHRC"; then say "direnv hook removed from $BASHRC"; fi
+envrc=$DOGCHEF_DIR/.envrc
+if drop_line "$export_line" "$envrc"; then
+  if [[ -z $(tr -d '[:space:]' < "$envrc") ]]; then rm -f "$envrc"; say "$envrc removed (nothing else in it)"
+  else say "export removed from $envrc, other lines kept"; fi
 fi
 
 mkdir -p "$WRAP_DIR"
@@ -32,13 +42,6 @@ for n in CLAUDE.md settings.json skills plugins; do
   else ln -s "$CLAUDE_HOME/$n" "$BUSINESS_DIR/$n"; say "$n linked"; fi
 done
 
-mkdir -p "$DOGCHEF_DIR"
-if grep -qxF "$export_line" "$DOGCHEF_DIR/.envrc" 2>/dev/null; then say ".envrc already exports CLAUDE_CONFIG_DIR"; else
-  [[ ! -s $DOGCHEF_DIR/.envrc || -z $(tail -c1 "$DOGCHEF_DIR/.envrc") ]] || echo >> "$DOGCHEF_DIR/.envrc"
-  printf '%s\n' "$export_line" >> "$DOGCHEF_DIR/.envrc"; say ".envrc updated"
-fi
-direnv allow "$DOGCHEF_DIR"
-
 cat <<MSG
 
 Next: open a new shell (or exec bash), then
@@ -47,3 +50,4 @@ Next: open a new shell (or exec bash), then
 For Orca (its agents do not read ~/.bashrc), re-render the unit and restart it, which ends running agents:
   bash ~/Projects/personal/evcc-pi/nucbox/install-orca.sh && systemctl --user restart orca.service
 MSG
+if command -v direnv >/dev/null; then echo "direnv is no longer used; optional: sudo apt remove direnv"; fi
