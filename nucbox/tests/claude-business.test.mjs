@@ -3,12 +3,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("../claude-business-direnv.sh", import.meta.url));
+const wrapSrc = fileURLToPath(new URL("../claude-wrap", import.meta.url));
 const LINK = 'export CLAUDE_CONFIG_DIR="$HOME/.claude-business"';
 
 function setup() {
@@ -36,6 +37,9 @@ test("first run sets up, second run changes nothing", () => {
     for (const n of ["CLAUDE.md", "settings.json", "skills", "plugins"]) assert.ok(lstatSync(join(t.home, ".claude-business", n)).isSymbolicLink());
     assert.equal(t.read("Projects/dogchef/.envrc"), `${LINK}\n`);
     assert.equal(t.read(".bashrc").match(/direnv hook bash/g).length, 1);
+    assert.equal(t.read(".bashrc").match(/claude-wrap/g).length, 1);
+    assert.equal(t.read(".local/claude-wrap/claude"), readFileSync(wrapSrc, "utf8"));
+    assert.ok(statSync(join(t.home, ".local/claude-wrap/claude")).mode & 0o100);
     const before = [".bashrc", "Projects/dogchef/.envrc"].map(t.read);
     const out = t.run();
     assert.deepEqual([".bashrc", "Projects/dogchef/.envrc"].map(t.read), before);

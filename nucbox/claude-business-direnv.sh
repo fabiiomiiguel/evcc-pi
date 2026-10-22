@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Claude Code runs as the business account inside DOGCHEF_DIR (via direnv's CLAUDE_CONFIG_DIR); everywhere else it
-# keeps ~/.claude. The business dir shares CLAUDE.md, settings.json, skills and plugins with ~/.claude by symlink;
+# Claude Code runs as the business account in dogchef repos (the claude-wrap wrapper first on PATH picks it; the
+# direnv .envrc in DOGCHEF_DIR is a second path); everywhere else it keeps ~/.claude. The business dir shares CLAUDE.md, settings.json, skills and plugins with ~/.claude by symlink;
 # login is separate. Safe to run again; nothing existing is overwritten or deleted.
 set -euo pipefail
 say() { echo "==> $*"; }
@@ -8,13 +8,21 @@ CLAUDE_HOME=${CLAUDE_HOME:-$HOME/.claude}
 BUSINESS_DIR=${BUSINESS_DIR:-$HOME/.claude-business}
 DOGCHEF_DIR=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
 BASHRC=${BASHRC:-$HOME/.bashrc}
+WRAP_DIR=${WRAP_DIR:-$HOME/.local/claude-wrap}
 export_line='export CLAUDE_CONFIG_DIR="$HOME/.claude-business"'
 hook_line='eval "$(direnv hook bash)"'
+path_line='export PATH="$HOME/.local/claude-wrap:$PATH"'
 
 if command -v direnv >/dev/null; then say "direnv already installed"; else say "installing direnv"; sudo apt install -y direnv; fi
 
 if grep -qsF 'direnv hook bash' "$BASHRC"; then say "direnv hook already in $BASHRC"; else
   printf '%s\n' "$hook_line" >> "$BASHRC"; say "direnv hook added to $BASHRC"
+fi
+
+mkdir -p "$WRAP_DIR"
+install -m 755 "$(dirname "$0")/claude-wrap" "$WRAP_DIR/claude"; say "wrapper installed in $WRAP_DIR"
+if grep -qxF "$path_line" "$BASHRC"; then say "wrapper PATH already in $BASHRC"; else
+  printf '%s\n' "$path_line" >> "$BASHRC"; say "wrapper PATH added to $BASHRC"
 fi
 
 mkdir -p "$BUSINESS_DIR"
@@ -36,5 +44,6 @@ cat <<MSG
 Next: open a new shell (or exec bash), then
   cd ~/Projects/dogchef/dev && claude
   /login   (business account), then /status to confirm
-Claude started by Orca or systemd does not pass through direnv: it keeps the personal account.
+For Orca (its agents do not read ~/.bashrc), re-render the unit and restart it, which ends running agents:
+  bash ~/Projects/personal/evcc-pi/nucbox/install-orca.sh && systemctl --user restart orca.service
 MSG

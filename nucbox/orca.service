@@ -3,8 +3,8 @@ Description=Orca runtime server (headless)
 After=network-online.target
 
 [Service]
-# claude lives in ~/.local/bin; the agents run with this PATH and this home
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# claude lives in ~/.local/bin; the agents run with this PATH and this home; claude-wrap picks the account
+Environment=PATH=%h/.local/claude-wrap:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/orca-ide serve --port @ORCA_PORT@ --pairing-address wss://@ORCA_HOST@
 Restart=on-failure
 RestartSec=10

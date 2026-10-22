@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Picks the Claude account by where it runs: dogchef repos (origin in dogchef-be/, any worktree location) and
+# ~/Projects/dogchef use ~/.claude-business; the rest keeps the default ~/.claude. A preset CLAUDE_CONFIG_DIR wins.
+# Installed as ~/.local/claude-wrap/claude by claude-business-direnv.sh; execs the real binary by absolute path.
+if [[ -z ${CLAUDE_CONFIG_DIR:-} ]]; then
+  dogchef=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
+  if [[ $PWD == "$dogchef" || $PWD == "$dogchef"/* ]] || [[ $(git -C "$PWD" remote get-url origin 2>/dev/null) == *dogchef-be/* ]]; then
+    export CLAUDE_CONFIG_DIR=$HOME/.claude-business
+  fi
+fi
+exec "$HOME/.local/bin/claude" "$@"
