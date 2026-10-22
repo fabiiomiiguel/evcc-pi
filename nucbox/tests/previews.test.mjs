@@ -1,6 +1,6 @@
-// Runs Caddy (as the current user, plain HTTP on a high port) with what `caddy-previews.sh --print` renders, and
-// checks the source rule, the port rules and the proxying. Needs the box's caddy.
-// Run: node --test nucbox/tests/previews.test.mjs
+// Runs Caddy (as the current user, plain HTTP on a high port) with what `caddy-previews.sh --print` renders over the
+// Everon render, and checks the source rule, the port rules, the shared login and the proxying. Needs the box's caddy
+// (with caddy-security). Run: node --test nucbox/tests/previews.test.mjs
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -14,32 +14,66 @@ const PORT = 18480;
 const UP = 4321; // an allowed preview port the test listens on
 const UP6 = 4322; // another, listened on [::1] only
 const D = "dev.example.com";
-const script = fileURLToPath(new URL("../caddy-previews.sh", import.meta.url));
-// requests from 127.0.0.1 stand for the tailnet, from [::1] for the LAN
+const EVERON = "everon.example.com";
+const previews = fileURLToPath(new URL("../caddy-previews.sh", import.meta.url));
+const everon = fileURLToPath(new URL("../caddy-everon-login.sh", import.meta.url));
+// requests from 127.0.0.1 stand for the tailnet, from [::1] for the LAN, from 127.0.0.2 for anyone else
+const TAILNET = "127.0.0.1", LAN = "::1", OUTSIDER = "127.0.0.2";
 const env = {
-  ...process.env, CADDY_DOMAIN: "example.com", PREVIEW_DOMAIN: D, TAILNET_CIDR: "127.0.0.0/8", LAN_CIDR: "::1/128",
-  CLOUDFLARE_API_TOKEN: "x".repeat(40),
+  ...process.env, CADDY_DOMAIN: "example.com", PREVIEW_DOMAIN: D, TAILNET_CIDR: "127.0.0.1/32", LAN_CIDR: "::1/128",
+  EVERON_HOST: EVERON, EVERON_USER: "fabio",
+  CLOUDFLARE_API_TOKEN: "x".repeat(40), AUTHP_SHARED_KEY: "a".repeat(64), AUTHP_PREVIEW_KEY: "b".repeat(64),
 };
 const dir = mkdtempSync(join(tmpdir(), "previews-"));
 let caddy, upstream, upstream6;
 
-// The rendered config, moved to plain HTTP on PORT: nothing else changes.
+const print = (script, file) => execFileSync("bash", [script, "--print", ...(file ? [file] : [])], { encoding: "utf8", env });
+
+// Previews over the Everon render, moved to plain HTTP on PORT with a real hash and a writable store: nothing else changes.
 function config() {
-  return execFileSync("bash", [script, "--print"], { encoding: "utf8", env })
+  const hash = execFileSync("caddy", ["hash-password", "--plaintext", "secret"], { encoding: "utf8" }).trim();
+  writeFileSync(join(dir, "everon"), print(everon));
+  return print(previews, join(dir, "everon"))
     .replace("{\n", `{\n\tadmin off\n\tauto_https off\n\thttp_port ${PORT}\n`)
+    .replace(/password "[^"]*"/, `password "bcrypt:${hash.split("$")[2]}:${hash}"`)
+    .replace("/var/lib/caddy/authcrunch/users.json", join(dir, "users.json"))
+    .replaceAll(`https://login.${D}/`, `http://login.${D}:${PORT}/`)
     .replace(/^(\*\.[^ ]+) \{/gm, `http://$1:${PORT} {`);
 }
 
-function req(host, path = "/", { from = "127.0.0.1", headers = {} } = {}) {
+// jar: a session's cookies (name -> value), filled from Set-Cookie
+function req(host, path = "/", { from = TAILNET, jar = {}, method = "GET", body, headers = {} } = {}) {
   return new Promise((ok, ko) => {
-    const r = http.request({ host: from, port: PORT, path, headers: { Host: `${host}:${PORT}`, ...headers } }, (res) => {
+    const cookie = Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
+    const h = { Host: `${host}:${PORT}`, ...(cookie && { Cookie: cookie }), ...headers };
+    if (body) Object.assign(h, { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(body) });
+    const local = from === LAN ? { host: "::1" } : { host: "127.0.0.1", localAddress: from };
+    const r = http.request({ ...local, port: PORT, path, method, headers: h }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
-      res.on("end", () => ok({ status: res.statusCode, location: res.headers.location ?? "", body: data }));
+      res.on("end", () => {
+        for (const c of res.headers["set-cookie"] ?? []) {
+          const kv = c.split(";")[0];
+          jar[kv.slice(0, kv.indexOf("="))] = kv.slice(kv.indexOf("=") + 1);
+        }
+        ok({ status: res.statusCode, location: res.headers.location ?? "", cookies: res.headers["set-cookie"] ?? [], body: data });
+      });
     });
     r.on("error", ko);
-    r.end();
+    r.end(body);
   });
+}
+const path = (url) => url.replace(/^https?:\/\/[^/]+/, "");
+
+// Logs in at the portal on host under prefix; returns the last answer (its location is the redirect back).
+async function login(host, prefix, opts) {
+  const user = await req(host, `${prefix}/login`, { ...opts, method: "POST", body: "username=fabio&realm=local" });
+  // the password step is a form on the sandbox page, with its own id
+  const form = (await req(host, path(user.location), opts)).body;
+  const action = form.match(/action="([^"]+\/password-auth)"/)[1];
+  const id = form.match(/name="sandbox_id"[^>]*value="([^"]+)"/)[1];
+  const pass = await req(host, action, { ...opts, method: "POST", body: `secret=secret&sandbox_id=${id}` });
+  return req(host, path(pass.location), opts);
 }
 
 before(async () => {
@@ -64,42 +98,84 @@ after(() => {
 });
 
 test("rendering again over its own output changes nothing but keeps the rest of the file", () => {
-  const print = (file) => execFileSync("bash", [script, "--print", ...(file ? [file] : [])], { encoding: "utf8", env });
-  const once = print();
+  const once = print(previews);
   const other = "other.example.com {\n\trespond 200\n}\n";
   const input = join(dir, "again");
   writeFileSync(input, once.replace("respond @outsiders 403", "respond @outsiders 418") + other);
-  assert.equal(print(input), once + other);
+  assert.equal(print(previews, input), once + other);
 });
 
-test("no login anywhere: the render has no security block and needs no login key", () => {
-  const out = execFileSync("bash", [script, "--print"], { encoding: "utf8", env });
-  assert.doesNotMatch(out, /security|authorize|authenticate|AUTHP_/);
-});
-
-test("refused hosts get 404", async () => {
-  for (const label of ["3000", "6768", "8080", "9090", "2999", "10000", "abc", "04321", "x4321"]) {
-    assert.equal((await req(`${label}.${D}`)).status, 404, label);
+test("refused hosts get 404 before the login, from the tailnet and the LAN", async () => {
+  for (const from of [TAILNET, LAN]) {
+    for (const label of ["3000", "6768", "8080", "9090", "2999", "10000", "abc", "04321", "x4321"]) {
+      assert.equal((await req(`${label}.${D}`, "/", { from })).status, 404, `${label} from ${from}`);
+    }
   }
 });
 
-test("only the tailnet gets in: the LAN gets 403, on every port", async () => {
-  for (const label of [UP, UP6, 9090, "abc"]) {
-    assert.equal((await req(`${label}.${D}`, "/", { from: "::1" })).status, 403, String(label));
+test("a source outside the tailnet and the LAN gets 403, login page included", async () => {
+  for (const label of [UP, UP6, 9090, "abc", "login"]) {
+    assert.equal((await req(`${label}.${D}`, "/", { from: OUTSIDER })).status, 403, String(label));
   }
 });
 
-test("an allowed port proxies straight away; the dev server sees Host localhost:<port>; [::1] and websockets work", async () => {
-  const page = await req(`${UP}.${D}`, "/x?y=1");
-  assert.equal(page.status, 200);
-  assert.equal(page.body, `host=localhost:${UP} forwarded=${UP}.${D}:${PORT}`);
-  assert.equal((await req(`${UP6}.${D}`)).body, "ipv6", "a server on [::1] only is reached too");
-  assert.equal((await req(`5555.${D}`)).status, 502); // proxied; nothing listens there
+test("without a session an allowed port goes to the login, from the LAN and the tailnet", async () => {
+  for (const from of [LAN, TAILNET]) {
+    const r = await req(`${UP}.${D}`, "/x?y=1", { from });
+    assert.equal(r.status, 302, from);
+    assert.match(r.location, new RegExp(`^http://login\\.${D}:${PORT}/\\?redirect_url=`));
+    assert.equal((await req(`${UP6}.${D}`, "/", { from })).status, 302, "the [::1] fallback is behind the login too");
+  }
+});
+
+test("one login from the LAN opens every allowed port for 8 h; cookie on PREVIEW_DOMAIN only; websockets pass; logout ends it", async () => {
+  const jar = {};
+  const opts = { from: LAN, jar };
+  // the portal only keeps a redirect back to a preview (the browser's URL: https, no port)
+  const portal = (url) => req(`login.${D}`, "/?redirect_url=" + encodeURIComponent(url), opts);
+  assert.ok(!(await portal(`https://${EVERON}/`)).cookies.some((c) => c.startsWith("AUTHP_REDIRECT_URL=")));
+  const back = `https://${UP}.${D}/x?y=1`;
+  assert.ok((await portal(back)).cookies.some((c) => c.startsWith(`AUTHP_REDIRECT_URL=${back};`)));
+
+  const done = await login(`login.${D}`, "", opts);
+  assert.equal(done.location, back);
+  const token = done.cookies.find((c) => c.startsWith("AUTHP_ACCESS_TOKEN="));
+  assert.match(token ?? "", new RegExp(`; Domain=${D.replaceAll(".", "\\.")};`), "the cookie is for PREVIEW_DOMAIN, never its parent");
+  const claims = JSON.parse(Buffer.from(jar.AUTHP_ACCESS_TOKEN.split(".")[1], "base64url").toString());
+  assert.ok(Math.abs(claims.exp - Date.now() / 1000 - 8 * 3600) < 120, `token lifetime 8 h, exp=${claims.exp}`);
+
+  for (const from of [LAN, TAILNET]) {
+    const page = await req(`${UP}.${D}`, "/", { from, jar });
+    assert.equal(page.status, 200, from);
+    assert.equal(page.body, `host=localhost:${UP} forwarded=${UP}.${D}:${PORT}`);
+  }
+  assert.equal((await req(`${UP6}.${D}`, "/", opts)).body, "ipv6", "a server on [::1] only is reached too");
+  assert.equal((await req(`5555.${D}`, "/", opts)).status, 502); // authorised and proxied; nothing listens there
+  assert.equal((await req(`9090.${D}`, "/", opts)).status, 404);
+  assert.equal((await req(`${UP}.${D}`, "/", { from: OUTSIDER, jar })).status, 403, "a session does not open it to outsiders");
 
   const ws = await new Promise((ok, ko) => {
-    http.request({ host: "127.0.0.1", port: PORT, headers: { Host: `${UP}.${D}:${PORT}`, Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==" } })
+    const cookie = Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
+    http.request({ host: "::1", port: PORT, headers: { Host: `${UP}.${D}:${PORT}`, Cookie: cookie, Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==" } })
       .on("upgrade", (res, sock) => { sock.destroy(); ok(res); }).on("response", (res) => ok(res)).on("error", ko).end();
   });
   assert.equal(ws.statusCode, 101);
   assert.equal(ws.headers["x-host"], `localhost:${UP}`);
+
+  const out = await req(`login.${D}`, "/logout", opts);
+  assert.ok(out.cookies.some((c) => new RegExp(`^AUTHP_ACCESS_TOKEN=delete;.*Domain=${D.replaceAll(".", "\\.")};`).test(c)), "logout clears the shared cookie");
+  assert.equal((await req(`${UP}.${D}`, "/", opts)).status, 302);
+  assert.equal((await req(`${UP6}.${D}`, "/", opts)).status, 302);
+});
+
+test("tokens do not cross: Everon's is refused on the previews, a preview's on Everon", async () => {
+  const ev = {};
+  await login(EVERON, "/auth", { from: LAN, jar: ev });
+  assert.equal((await req(EVERON, "/", { from: LAN, jar: ev })).status, 200, "Everon's token opens Everon");
+  assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: ev })).status, 302, "Everon's token is not a preview session");
+
+  const pv = {};
+  await login(`login.${D}`, "", { from: LAN, jar: pv });
+  assert.equal((await req(`${UP}.${D}`, "/", { from: LAN, jar: pv })).status, 200, "the preview token opens the previews");
+  assert.notEqual((await req(EVERON, "/", { from: LAN, jar: pv })).status, 200, "a preview token (what a dev server sees) is not an Everon session");
 });

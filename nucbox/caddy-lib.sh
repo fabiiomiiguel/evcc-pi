@@ -8,10 +8,11 @@ die() { echo "!! $*" >&2; exit 1; }
 # the baseline Caddyfile for $1 (a domain)
 baseline() { sed "s|@CADDY_DOMAIN@|$1|g" "$HERE/Caddyfile.template"; }
 
-# caddy-security's global block: one identity store and the Everon portal (host-only cookie). $PW is the
-# identity's `bcrypt:<cost>:<hash>`.
+# caddy-security's global block: one identity store, the Everon portal (host-only cookie) and the previews'
+# portal on login.PREVIEW_DOMAIN (cookie for PREVIEW_DOMAIN only, its own key, so a token a dev server sees is
+# not valid on Everon; 8 h, a working day). $PW is the identity's `bcrypt:<cost>:<hash>`.
 security_block() {
-  : "${EVERON_HOST:?set EVERON_HOST in .env}" "${EVERON_USER:?set EVERON_USER in .env}"
+  : "${EVERON_HOST:?set EVERON_HOST in .env}" "${EVERON_USER:?set EVERON_USER in .env}" "${PREVIEW_DOMAIN:?set PREVIEW_DOMAIN in .env}"
   cat <<EOF
 	security {
 		local identity store localdb {
@@ -35,6 +36,18 @@ security_block() {
 			crypto key verify {env.AUTHP_SHARED_KEY}
 			allow roles authp/admin
 		}
+		authentication portal previewportal {
+			crypto default token lifetime 28800
+			crypto key sign-verify {env.AUTHP_PREVIEW_KEY}
+			cookie domain $PREVIEW_DOMAIN
+			enable identity store localdb
+			trust login redirect uri domain suffix .$PREVIEW_DOMAIN path prefix /
+		}
+		authorization policy previewpolicy {
+			set auth url https://login.$PREVIEW_DOMAIN/
+			crypto key verify {env.AUTHP_PREVIEW_KEY}
+			allow roles authp/admin
+		}
 	}
 EOF
 }
@@ -42,6 +55,7 @@ EOF
 # $1 = where to copy the live Caddyfile; sets PW to its identity's hash (empty when it has none)
 read_live() {
   sudo -v
+  sudo grep -q '^AUTHP_PREVIEW_KEY=.' "$ENVF" || die "no AUTHP_PREVIEW_KEY in $ENVF: run ./caddy-install.sh"
   sudo cat "$LIVE" >"$1"
   PW=$(grep -oE 'password "bcrypt:[0-9]+:[^"]+"' "$1" | head -1 | cut -d'"' -f2 || true)
 }
