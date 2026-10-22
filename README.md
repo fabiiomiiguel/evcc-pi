@@ -328,6 +328,17 @@ to your account, and check it with `ssh -T git@github.com`. Clones with an `http
 `gh auth setup-git` once (after `gh auth login`); without it `git push` fails with "unable to get
 password from user".
 
+### Claude business account for dogchef
+
+`bash nucbox/claude-business-direnv.sh` makes Claude Code use the business account inside `~/Projects/dogchef` and
+the personal one everywhere else. It installs `direnv` if missing, adds its hook to `~/.bashrc`, creates
+`~/.claude-business` with `CLAUDE.md`, `settings.json`, `skills` and `plugins` symlinked to `~/.claude` (an existing
+real file there is left alone), adds `export CLAUDE_CONFIG_DIR="$HOME/.claude-business"` to
+`~/Projects/dogchef/.envrc` and runs `direnv allow`. Safe to run again. Then, in a new shell,
+`cd ~/Projects/dogchef/dev && claude`, `/login` with the business account, `/status` to confirm. Claude started by
+Orca or systemd does not pass through direnv. Undo: remove the `.envrc` line, the hook line in `~/.bashrc` and
+`~/.claude-business`. Test: `node --test nucbox/tests/claude-business.test.mjs`.
+
 ### Projects on the box
 
 The box keeps its own clones under `~/Projects/<org>/` and works on them itself; code moves
