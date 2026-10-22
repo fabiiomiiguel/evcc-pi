@@ -34,8 +34,8 @@ render() {
 				// A page restored from the back-forward cache holds a dead socket and a stale session: reload so it goes through the login.
 				addEventListener("pageshow",e=>{if(e.persisted)location.reload()});
 				// A drop the user did not start: no session -> login; session valid -> reload the iframe to reconnect (3 tries).
-				let own=0,tries=0;
-				const retry=()=>{if(tries++<3)setTimeout(()=>{f.src=f.src},3000)};
+				let own=0,tries=0,idle=0;
+				const retry=()=>{if(tries++<3)setTimeout(()=>{if(!idle)f.src=f.src},3000)};
 				const dropped=()=>fetch("/vnc.html",{redirect:"manual",cache:"no-store"}).then(r=>r.type==="opaqueredirect"?location.replace("/"):retry(),retry);
 				// Keeps noVNC's own Disconnecting... screen up until the login; if the navigation is blocked (e.g. unsubmitted
 				// text in the address bar), shows a link there to finish by hand.
@@ -44,7 +44,11 @@ render() {
 				let armed=0;const c=d.documentElement.classList;
 				new MutationObserver(()=>{if(c.contains("noVNC_connected")){armed=1;tries=0}else if(c.contains("noVNC_connecting"))armed=1;else if(armed&&!own&&!c.contains("noVNC_disconnecting")&&!c.contains("noVNC_reconnecting")){armed=0;dropped()}}).observe(d.documentElement,{attributes:true,attributeFilter:["class"]})});
 				const mac=/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform);
-				f.src="/vnc.html?autoconnect=1&resize=scale&path=websockify"+(mac?"":"-pc");
+				const url="/vnc.html?autoconnect=1&resize=scale&path=websockify"+(mac?"":"-pc");
+				// A tab hidden for 5 minutes drops its VNC session (a stale viewer starves other clients of the output); no logout.
+				const IDLE_MS=300000;let idleT;
+				document.addEventListener("visibilitychange",()=>{if(document.hidden)idleT=setTimeout(()=>{idle=1;f.src="about:blank"},IDLE_MS);else{clearTimeout(idleT);if(idle){idle=0;tries=0;f.src=url}}});
+				f.src=url;
 				</script></body></html>
 				HTML 200
 			reverse_proxy /websockify-pc unix//run/everon/novnc-pc.sock

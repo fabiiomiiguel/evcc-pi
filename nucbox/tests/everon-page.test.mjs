@@ -14,6 +14,7 @@ const js = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 function boot(fetchResult) {
   const log = { replaced: [], fetched: [], reloads: 0 };
   const timers = [];
+  let timerId = 0;
   const classes = new Set();
   classes.contains = (n) => classes.has(n);
   let observer;
@@ -34,12 +35,13 @@ function boot(fetchResult) {
     addEventListener: (type, fn) => (listeners.load = fn),
   };
   const ctx = {
-    document: { querySelector: () => iframe },
+    document: { querySelector: () => iframe, hidden: false, addEventListener: (type, fn) => (listeners[type] = fn) },
+    clearTimeout: (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); },
     window: undefined,
     navigator: { platform: "Linux x86_64" },
     location: { replace: (u) => log.replaced.push(u) },
     addEventListener: (type, fn) => (listeners[type] = fn),
-    setTimeout: (fn, ms) => timers.push({ fn, ms }),
+    setTimeout: (fn, ms) => { const id = ++timerId; timers.push({ fn, ms, id }); return id; },
     MutationObserver: class { constructor(cb) { observer = cb; } observe() {} },
     fetch: (url, opts) => {
       log.fetched.push(url);
@@ -107,4 +109,46 @@ test("the initial not-yet-connected state does not trigger a check", async () =>
   t.load(); t.setState();
   await flush(t);
   assert.deepEqual(t.log.fetched, []);
+});
+
+const IDLE = 5 * 60 * 1000;
+const setHidden = (t, hidden) => { t.ctx.document.hidden = hidden; t.listeners.visibilitychange(); };
+
+test("hidden for less than 5 minutes then visible does nothing", () => {
+  const t = boot(okRes);
+  const url = t.iframe.src;
+  setHidden(t, true);
+  assert.equal(t.timers.length, 1);
+  assert.equal(t.timers[0].ms, IDLE);
+  setHidden(t, false);
+  assert.equal(t.timers.length, 0);
+  assert.equal(t.iframe.src, url);
+  assert.equal(t.log.reloads, 0);
+});
+
+test("hidden for 5 minutes releases the iframe quietly, visible restores it", async () => {
+  const t = boot(okRes);
+  const url = t.iframe.src;
+  t.load(); t.setState("connected");
+  setHidden(t, true);
+  t.timers.shift().fn();
+  assert.equal(t.iframe.src, "about:blank");
+  t.load(); t.setState(); // the socket closing while hidden
+  await flush(t);
+  assert.deepEqual(t.log.fetched, []);
+  assert.deepEqual(t.log.replaced, []);
+  assert.equal(t.log.reloads, 1);
+  setHidden(t, false);
+  assert.equal(t.iframe.src, url);
+});
+
+test("a reconnect retry pending when the tab is released does not reload the iframe", async () => {
+  const t = boot(okRes);
+  t.load(); t.setState("connected"); t.setState();
+  await new Promise((r) => setImmediate(r));
+  setHidden(t, true);
+  t.timers.splice(t.timers.findIndex((x) => x.ms === IDLE), 1)[0].fn();
+  const reloads = t.log.reloads;
+  while (t.timers.length) t.timers.shift().fn();
+  assert.equal(t.log.reloads, reloads);
 });
