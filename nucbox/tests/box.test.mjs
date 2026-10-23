@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,5 +83,19 @@ test("the instance names can be overridden by env", () => {
   try {
     const r = spawnSync(join(t.home, "bin/devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}`, DEVBOX_INSTANCE: "x" } });
     assert.match(r.stdout, /^lxc exec x /);
+  } finally { t.done(); }
+});
+
+test("without is-business-dir.sh next to it, it exits 70 and runs nothing", () => {
+  const t = setup();
+  try {
+    const dir = join(t.home, "lone");
+    mkdirSync(dir);
+    copyFileSync(box, join(dir, "box"));
+    symlinkSync(join(dir, "box"), join(dir, "devbox"));
+    const r = spawnSync(join(dir, "devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}` } });
+    assert.equal(r.status, 70);
+    assert.equal(r.stdout, "");
+    assert.match(r.stderr, /is-business-dir\.sh missing/);
   } finally { t.done(); }
 });

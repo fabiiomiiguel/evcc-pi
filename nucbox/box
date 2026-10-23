@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # devbox -> LXD `personal`, dogchefbox -> LXD `dev` (by the name it is called as). Runs "$@" in the container as
 # fabio in the current directory (same paths both sides). Refuses the other's folders with claude-wrap's rule.
-. "$(dirname "$(realpath "$0")")/is-business-dir.sh"
+. "$(dirname "$(realpath "$0")")/is-business-dir.sh" || { echo "box: is-business-dir.sh missing next to $0" >&2; exit 70; }
 me=$(basename "$0")
 case $me in
   devbox) inst=${DEVBOX_INSTANCE:-personal}; want=0 ;;

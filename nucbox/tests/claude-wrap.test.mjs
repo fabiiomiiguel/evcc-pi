@@ -3,7 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,5 +69,21 @@ test("running from the wrapper dir does not loop", () => {
     const dir = join(t.home, ".local", "claude-wrap");
     mkdirSync(dir, { recursive: true });
     assert.equal(t.run(dir, { PATH: `${dir}:${process.env.PATH}` }, ["b"]), "real:unset:b");
+  } finally { t.done(); }
+});
+
+test("without is-business-dir.sh: normal mode exits 70 and never runs claude, guard mode stays fail-open", () => {
+  const t = setup();
+  try {
+    const dir = join(t.home, "lone");
+    mkdirSync(dir);
+    const lone = join(dir, "claude-wrap");
+    copyFileSync(wrap, lone);
+    const go = (extra) => spawnSync("bash", [lone, "a"], { cwd: t.home, encoding: "utf8", input: "{}", env: { ...process.env, HOME: t.home, ...extra } });
+    const r = go({});
+    assert.equal(r.status, 70);
+    assert.equal(r.stdout, "");
+    assert.match(r.stderr, /is-business-dir\.sh missing/);
+    assert.equal(go({ CLAUDE_WRAP_GUARD: "1" }).status, 0);
   } finally { t.done(); }
 });
