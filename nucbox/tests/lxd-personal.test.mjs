@@ -32,7 +32,7 @@ shift 3; cmd="$*"
 case $cmd in
   "id "*) [[ -e $s/user ]]; exit ;;
   *usermod\\ -l*) touch "$s/user" ;;
-  *"/dev/tcp/1.1.1.1"*) [[ -e $s/noegress || -e $s/nodns ]] && exit 1 ;;
+  *"/dev/tcp/1.1.1.1"*) [[ -e $s/noegress ]] && exit 1; [[ -e $s/nodns && $cmd == *"getent hosts"* ]] && exit 1 ;;
   *"command -v docker"*) [[ -e $s/prov ]]; exit ;;
   *apt-get*) touch "$s/prov" ;;
 esac
@@ -108,6 +108,7 @@ test("TCP egress without name resolution still stops the run", () => {
     const r = t.run();
     assert.equal(r.status, 1);
     assert.match(r.stderr, /ufw/);
+    assert.ok(t.calls().some((l) => /\/dev\/tcp\/1\.1\.1\.1.*getent hosts/.test(l)));
     assert.ok(t.calls().every((l) => !/apt-get/.test(l)));
   } finally { t.done(); }
 });
