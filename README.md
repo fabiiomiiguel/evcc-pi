@@ -424,6 +424,10 @@ lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounte
 - LXD's `dns.mode=none` still starts its dnsmasq with DNS on, which dies on Pi-hole's `:53`; the bridge therefore
   sets `raw.dnsmasq=port=0`, and the container gets a static address and the host's Pi-hole (192.168.68.50, `PERSONAL_DNS`) as its only resolver,
   no public fallback, through cloud-init.
+- No dogchef files inside: instead of mounting all of `~/Projects` and `~/orca`, the script adds one disk (`m-p-<dir>`,
+  `m-o-<workspace>`, same paths, `shift=true`) per `~/Projects/*` except dogchef and per `~/orca/workspaces/*` whose
+  worktrees are not dogchef (`is-business-dir.sh`; an empty workspace counts as personal). A re-run adds disks for
+  new dirs and removes stale `m-*` ones, so **re-run the script after creating an Orca workspace or a Projects folder**.
 - Run it from `nucbox/` (`cd ~/Projects/personal/evcc-pi/nucbox`).
 - Probed on this host: ufw is active (`/etc/default/ufw`: input and forward default DROP), so with no rule for
   `lxdpersonal0` TCP/UDP to the host (Pi-hole `:53`, DHCP) and forwarded to the internet are dropped while ICMP

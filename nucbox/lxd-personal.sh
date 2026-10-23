@@ -30,6 +30,8 @@ USER_NAME=${PERSONAL_USER:-fabio}
 ACL=${PERSONAL_ACL:-personal-egress}
 LAN_DROP=${PERSONAL_LAN_DROP:-192.168.68.0-192.168.68.49,192.168.68.51-192.168.71.255,100.64.0.0/10}
 
+. "$(dirname "$0")/is-business-dir.sh"
+
 has_device() { lxc config device list "$INST" | grep -qx "$1"; }
 add_device() { # name, then device args
   has_device "$1" && return 0
@@ -37,7 +39,21 @@ add_device() { # name, then device args
 }
 in_box() { lxc exec "$INST" -- "$@"; }
 
-for d in "$HOME/Projects" "$HOME/orca"; do [[ -d $d ]] || { echo "missing $d (mounted into $INST)" >&2; exit 1; }; done
+# `personal` gets no dogchef files: one disk per non-dogchef ~/Projects child and per ~/orca/workspaces child whose
+# worktrees are not dogchef (an empty workspace counts as personal). Devices named m-* are this script's; a re-run adds
+# new dirs and removes stale ones (and the old whole-tree `projects`/`orca` disks), so re-run it after creating an Orca workspace.
+[[ -d $HOME/Projects ]] || { echo "missing $HOME/Projects (mounted into $INST)" >&2; exit 1; }
+shopt -s nullglob
+declare -A WANT=()
+for d in "$HOME"/Projects/*/; do
+  d=${d%/}
+  is_business_dir "$d" || WANT["m-p-${d##*/}"]=$d
+done
+for w in "$HOME"/orca/workspaces/*/; do
+  w=${w%/}; business=
+  for c in "$w"/*/; do is_business_dir "${c%/}" && business=1; done
+  [[ $business ]] || WANT["m-o-${w##*/}"]=$w
+done
 
 lxc network show "$NET" >/dev/null 2>&1 ||
   lxc network create "$NET" ipv4.address="$GW" ipv4.nat=true ipv4.dhcp=false ipv6.address=none dns.mode=none \
@@ -92,8 +108,12 @@ fi
 # The user must exist before the disks: the mount creates /home/fabio as root and usermod -m then fails.
 in_box id "$USER_NAME" >/dev/null 2>&1 ||
   in_box bash -c "usermod -l $USER_NAME -d /home/$USER_NAME -m ubuntu && groupmod -n $USER_NAME ubuntu"
-add_device projects disk source="$HOME/Projects" path="$HOME/Projects" shift=true
-add_device orca disk source="$HOME/orca" path="$HOME/orca" shift=true
+for dev in $(lxc config device list "$INST" | grep -x 'projects\|orca\|m-.*'); do
+  [[ -v WANT[$dev] ]] || lxc config device remove "$INST" "$dev"
+done
+for dev in "${!WANT[@]}"; do add_device "$dev" disk source="${WANT[$dev]}" path="${WANT[$dev]}" shift=true; done
+# LXD creates the parents of the mounts as root with mode 000, which locks the user out of the mounts below.
+in_box install -d -o "$USER_NAME" -g "$USER_NAME" -m 755 "$HOME/Projects" "$HOME/orca" "$HOME/orca/workspaces"
 
 for p in $PORTS; do add_device "p$p" proxy listen="tcp:127.0.0.1:$p" connect="tcp:127.0.0.1:$p"; done
 # 3000 is the host's stellantis-worker, so the in-container 3000 (client-files app, football-fines frontend) is 3100 outside

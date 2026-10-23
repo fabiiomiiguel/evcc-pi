@@ -26,7 +26,8 @@ case "$1 $2" in
   "start "*) touch "$s/running"; exit 0 ;;
   "config device") case $3 in
     list) ls "$s" | sed -n 's/^dev-//p'; exit 0 ;;
-    add) touch "$s/dev-$5"; exit 0 ;; esac ;;
+    add) touch "$s/dev-$5"; exit 0 ;;
+    remove) rm -f "$s/dev-$5"; exit 0 ;; esac ;;
 esac
 [[ $1 == info ]] && { [[ -e $s/inst ]]; exit; }
 [[ $1 == init ]] && { touch "$s/inst"; exit 0; }
@@ -55,8 +56,10 @@ function setup() {
   const state = join(home, "state");
   mkdirSync(join(home, "bin"));
   mkdirSync(state);
-  mkdirSync(join(home, "Projects"));
-  mkdirSync(join(home, "orca"));
+  for (const d of ["Projects/dogchef", "Projects/personal", "orca/workspaces/dev/SUP-1", "orca/workspaces/mine/x", "orca/workspaces/empty"]) mkdirSync(join(home, d), { recursive: true });
+  // a workspace is dogchef when a worktree's origin is in dogchef-be/
+  const git = (...a) => spawnSync("git", ["-C", join(home, "orca/workspaces/dev/SUP-1"), ...a]);
+  git("init", "-q"); git("remote", "add", "origin", "ssh://git@github.com/dogchef-be/dev.git");
   writeFileSync(join(home, "bin/lxc"), STUB, { mode: 0o755 });
   const run = () => spawnSync("bash", [script], { encoding: "utf8", env: { ...process.env, HOME: home, STUB_STATE: state, PATH: `${join(home, "bin")}:${process.env.PATH}` } });
   const calls = () => readFileSync(join(state, "calls"), "utf8").trim().split("\n");
@@ -75,7 +78,9 @@ test("first run creates everything, second run only reads", () => {
     assert.ok(has(/^init ubuntu:26\.04 personal -n lxdpersonal0 .*limits\.memory=8GiB/));
     assert.ok(has(/^start personal$/));
     assert.ok(has(/usermod -l fabio/));
-    for (const d of ["projects", "orca"]) assert.ok(has(new RegExp(`^config device add personal ${d} disk source=${t.home}/.* shift=true$`)), d);
+    for (const d of ["m-p-personal", "m-o-mine", "m-o-empty"]) assert.ok(has(new RegExp(`^config device add personal ${d} disk source=${t.home}/.* path=${t.home}/.* shift=true$`)), d);
+    assert.ok(has(new RegExp(`^exec personal -- install -d -o fabio -g fabio -m 755 ${t.home}/Projects ${t.home}/orca ${t.home}/orca/workspaces$`)), "mount parents stay root-only");
+    assert.ok(c1.every((l) => !/dogchef|workspaces\/dev|device add personal (projects|orca) /.test(l.replace(t.home, ""))), "mounted dogchef files or a whole tree");
     for (const p of [3010, 5000, 8000, 8010, 8026, 8125, 9001]) assert.ok(has(new RegExp(`^config device add personal p${p} proxy listen=tcp:127\\.0\\.0\\.1:${p} connect=tcp:127\\.0\\.0\\.1:${p}$`)), String(p));
     assert.ok(has(/^config device add personal p3100 proxy listen=tcp:127\.0\.0\.1:3100 connect=tcp:127\.0\.0\.1:3000$/));
     assert.ok(has(/apt-get install -y docker\.io .*php8\.4-cli php8\.4-mbstring .*python3-venv/) && /composer\.github\.io\/installer\.sig.*sha384.*--install-dir=\/usr\/local\/bin/s.test(c1.join("\n")) && has(/setup_24\.x/) && has(/packages\.sury\.org\/php\/apt\.gpg/));
@@ -192,5 +197,22 @@ test("a failing apt-get update stops provisioning before anything else runs", { 
     const r = t.run();
     assert.notEqual(r.status, 0);
     assert.deepEqual(readFileSync(join(t.state, "fake"), "utf8").trim().split("\n"), ["apt-get update"]);
+  } finally { t.done(); }
+});
+
+test("a re-run adds a new personal dir, removes stale mounts and the old whole-tree disks, never a dogchef dir", () => {
+  const t = setup();
+  try {
+    for (const d of ["projects", "orca", "m-p-gone"]) writeFileSync(join(t.state, `dev-${d}`), "");
+    mkdirSync(join(t.home, "Projects/newrepo"));
+    mkdirSync(join(t.home, "orca/workspaces/fresh"));
+    assert.equal(t.run().status, 0);
+    const c = t.calls();
+    for (const d of ["projects", "orca", "m-p-gone"]) assert.ok(c.includes(`config device remove personal ${d}`), d);
+    for (const d of ["m-p-newrepo", "m-o-fresh"]) assert.ok(c.some((l) => l.startsWith(`config device add personal ${d} `)), d);
+    assert.ok(c.every((l) => !/add personal m-[po]-(dogchef|dev) /.test(l)));
+    t.reset();
+    assert.equal(t.run().status, 0);
+    assert.deepEqual(t.calls().filter((l) => /config device (add|remove)/.test(l)), []);
   } finally { t.done(); }
 });
