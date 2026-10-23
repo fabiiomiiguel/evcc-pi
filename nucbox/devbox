@@ -1,2 +1,0 @@
-#!/bin/sh
-exec lxc exec dev --cwd "$PWD" -- sudo -u fabio -H bash -lc 'cd "$0" && exec "$@"' "$PWD" "$@"

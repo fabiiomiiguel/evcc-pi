@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# devbox -> LXD `personal`, dogchefbox -> LXD `dev` (by the name it is called as). Runs "$@" in the container as
+# fabio in the current directory (same paths both sides). Refuses the other's folders with claude-wrap's rule.
+. "$(dirname "$(realpath "$0")")/is-business-dir.sh"
+me=$(basename "$0")
+case $me in
+  devbox) inst=${DEVBOX_INSTANCE:-personal}; want=0 ;;
+  dogchefbox) inst=${DOGCHEFBOX_INSTANCE:-dev}; want=1 ;;
+  *) echo "box: call it as devbox or dogchefbox" >&2; exit 64 ;;
+esac
+if is_business_dir "$PWD"; then got=1; else got=0; fi
+if [[ $got != "$want" ]]; then
+  if [[ $got == 1 ]]; then echo "$me: $PWD is a dogchef folder, use dogchefbox" >&2
+  else echo "$me: $PWD is not a dogchef folder, use devbox" >&2; fi
+  exit 2
+fi
+exec lxc exec "$inst" --cwd "$PWD" -- sudo -u fabio -H bash -lc 'cd "$0" && export GRAPHIFY_SKIP_HOOK=1 && exec "$@"' "$PWD" "$@"
