@@ -17,7 +17,9 @@ s=$STUB_STATE; echo "$*" >> "$s/calls"
 case "$1 $2" in
   "network show") [[ -e $s/net ]]; exit ;;
   "network create") touch "$s/net"; exit 0 ;;
-  "list "*) [[ -e $s/running ]] && echo RUNNING || echo STOPPED; exit 0 ;;
+  "list "*) [[ -e $s/running ]] && echo RUNNING
+    # an unanchored pattern also matches personal-old
+    [[ -e $s/oldrunning && $2 != ^* ]] && echo RUNNING; exit 0 ;;
   "start "*) touch "$s/running"; exit 0 ;;
   "config device") case $3 in
     list) ls "$s" | sed -n 's/^dev-//p'; exit 0 ;;
@@ -30,7 +32,7 @@ shift 3; cmd="$*"
 case $cmd in
   "id "*) [[ -e $s/user ]]; exit ;;
   *usermod\\ -l*) touch "$s/user" ;;
-  *"/dev/tcp/1.1.1.1"*) [[ -e $s/noegress ]] && exit 1 ;;
+  *"/dev/tcp/1.1.1.1"*) [[ -e $s/noegress || -e $s/nodns ]] && exit 1 ;;
   *"command -v docker"*) [[ -e $s/prov ]]; exit ;;
   *apt-get*) touch "$s/prov" ;;
 esac
@@ -82,8 +84,30 @@ test("a host that drops the container's egress stops before user, disks and pack
     writeFileSync(join(t.state, "noegress"), "");
     const r = t.run();
     assert.equal(r.status, 1);
+    assert.match(r.stderr, /sudo ufw status verbose/);
     assert.match(r.stderr, /sudo nft list ruleset/);
     assert.ok(t.calls().every((l) => !/usermod|config device add|apt-get/.test(l)));
     assert.ok(existsSync(join(t.state, "inst")));
+  } finally { t.done(); }
+});
+
+test("TCP egress without name resolution still stops the run", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "nodns"), "");
+    const r = t.run();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /ufw/);
+    assert.ok(t.calls().every((l) => !/apt-get/.test(l)));
+  } finally { t.done(); }
+});
+
+test("a running personal-old does not stand in for a stopped personal", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "oldrunning"), "");
+    const r = t.run();
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(t.calls().some((l) => l === "start personal"));
   } finally { t.done(); }
 });

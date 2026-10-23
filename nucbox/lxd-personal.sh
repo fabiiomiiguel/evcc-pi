@@ -4,9 +4,9 @@
 #
 # dns.mode=none still starts LXD's dnsmasq with DNS on, which dies on Pi-hole's :53 ("Address already in use"),
 # so the bridge sets raw.dnsmasq port=0. The container gets a static address and public resolvers through cloud-init.
-# Probed 2026-10-23 (record artifacts/r3-probe-*.log): on this host TCP/UDP from the bridge to the host
-# (Pi-hole :53, DHCP) and forwarded to the internet were dropped while ICMP passed, so the connectivity check below
-# stops with the command that shows the host rules (needs sudo) when that is still the case.
+# Probed 2026-10-23: on this host ufw is active (input and forward default DROP), so TCP/UDP from the bridge to the
+# host (Pi-hole :53, DHCP) and forwarded to the internet are dropped while ICMP passes. The connectivity check below
+# stops with the commands that show the ufw rules (needs sudo) until ufw routes the bridge.
 set -euo pipefail
 
 NET=${PERSONAL_NET:-lxdpersonal0}
@@ -43,12 +43,12 @@ ethernets:
     routes: [{to: default, via: ${GW%/*}}]
     nameservers: {addresses: [$ns]}"
 fi
-lxc list "$INST" -f csv -c s | grep -qx RUNNING || lxc start "$INST"
+lxc list "^${INST}$" -f csv -c s | grep -qx RUNNING || lxc start "$INST"
 in_box cloud-init status --wait >/dev/null
 
-if ! in_box timeout 10 bash -c 'echo >/dev/tcp/1.1.1.1/443' 2>/dev/null; then
-  echo "$INST has no TCP egress through $NET: the host drops it. Read the rules with:" >&2
-  echo "  sudo nft list ruleset; sudo iptables -S FORWARD; sudo iptables -S INPUT" >&2
+if ! in_box timeout 10 bash -c 'echo >/dev/tcp/1.1.1.1/443 && getent hosts deb.nodesource.com' >/dev/null 2>&1; then
+  echo "$INST has no TCP egress or no name resolution through $NET: ufw (input and forward DROP) blocks it. Read the rules with:" >&2
+  echo "  sudo ufw status verbose   (fallback: sudo nft list ruleset; sudo iptables -S FORWARD)" >&2
   exit 1
 fi
 

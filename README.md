@@ -424,9 +424,20 @@ lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounte
 - LXD's `dns.mode=none` still starts its dnsmasq with DNS on, which dies on Pi-hole's `:53`; the bridge therefore
   sets `raw.dnsmasq=port=0`, and the container gets a static address and public resolvers (1.1.1.1, 9.9.9.9)
   through cloud-init.
-- Probed on this host: TCP/UDP from the new bridge to the host, and forwarded to the internet, were dropped while
-  ICMP passed, so the script stops after creating the container, before provisioning, when the container has no TCP
-  egress, and prints `sudo nft list ruleset; sudo iptables -S FORWARD; sudo iptables -S INPUT` for the user.
+- Run it from `nucbox/` (`cd ~/Projects/personal/evcc-pi/nucbox`).
+- The bridge is cut off from the LAN (192.168.68.0/22) and the tailnet (100.64.0.0/10) only by ufw rules; LXD adds none.
+- Probed on this host: ufw is active (`/etc/default/ufw`: input and forward default DROP), so with no rule for
+  `lxdpersonal0` TCP/UDP to the host (Pi-hole `:53`, DHCP) and forwarded to the internet are dropped while ICMP
+  passes. The script then stops after creating the container, before provisioning, when it has no TCP egress or
+  cannot resolve a name, and prints `sudo ufw status verbose` (fallback `sudo nft list ruleset`). The ufw rules
+  that open it, in this order (first match wins), are not applied by the script (root):
+
+```bash
+sudo ufw route deny in on lxdpersonal0 to 192.168.68.0/22
+sudo ufw route deny in on lxdpersonal0 to 100.64.0.0/10
+sudo ufw route allow in on lxdpersonal0 out on br0
+sudo ufw allow in on lxdpersonal0 to 10.250.50.1 port 53   # optional: Pi-hole as resolver, then PERSONAL_DNS=10.250.50.1
+```
 
 ### dogchef apps and DB from the Mac
 
