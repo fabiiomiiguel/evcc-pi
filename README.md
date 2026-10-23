@@ -410,6 +410,24 @@ cd ~/Projects/dogchef/dev && dogchefbox make setup && dogchefbox make start
   SDK live under `~/.local` and `~/google-cloud-sdk` (no sudo), `~/.bashrc` exports
   `GITHUB_PERSONAL_ACCESS_TOKEN` from `gh auth token`, and the AWS/gcloud logins are yours.
 
+### Personal container `personal` (LXD)
+
+`devbox` runs in the LXD container `personal`, on its own NAT bridge `lxdpersonal0` (10.250.50.0/24): no LAN or
+tailnet address, no DHCP. Its dev servers reach the host's 127.0.0.1 only through LXD proxy devices (3010 5000 8000
+8010 8026 8125 9001, plus the container's 3000 as 3100 because the host's stellantis-worker holds 3000).
+
+```bash
+./lxd-personal.sh     # no sudo, only lxc; safe to run again; env PERSONAL_* override names, sizes, ports, DNS
+lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounted folders are untouched
+```
+
+- LXD's `dns.mode=none` still starts its dnsmasq with DNS on, which dies on Pi-hole's `:53`; the bridge therefore
+  sets `raw.dnsmasq=port=0`, and the container gets a static address and public resolvers (1.1.1.1, 9.9.9.9)
+  through cloud-init.
+- Probed on this host: TCP/UDP from the new bridge to the host, and forwarded to the internet, were dropped while
+  ICMP passed, so the script stops after creating the container, before provisioning, when the container has no TCP
+  egress, and prints `sudo nft list ruleset; sudo iptables -S FORWARD; sudo iptables -S INPUT` for the user.
+
 ### dogchef apps and DB from the Mac
 
 The apps open by their own `https://<app>.test` names (they call each other by those names, e.g.
