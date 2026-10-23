@@ -363,7 +363,7 @@ by hand when they change.
 The `dev` repo's compose binds `127.0.0.1:80/443`, which the box's Caddy already holds on every
 address, and the repo is shared, so it runs unchanged in an LXD system container `dev` with its own
 Docker and its own LAN address. Everything dogchef (repos of the `dogchef-be` org) goes through
-`devbox`; nothing of it runs on the host. The apps open inside the box and, through the NucBox only,
+`dogchefbox`; nothing of it runs on the host. The apps open inside the box and, through the NucBox only,
 from the Mac ([below](#dogchef-apps-and-db-from-the-mac)).
 
 ```bash
@@ -371,24 +371,25 @@ lxd init --preseed <<'EOF'          # dir pool, no managed network (no lxdbr0, w
 storage_pools: [{name: default, driver: dir}]
 profiles: [{name: default, devices: {root: {path: /, pool: default, type: disk}}}]
 EOF
-lxc init ubuntu:26.04 dev -c security.nesting=true -c limits.cpu=10 -c limits.memory=8GiB -c boot.autostart=true
+lxc init ubuntu:26.04 dev -c security.nesting=true -c limits.cpu=10 -c limits.memory=16GiB -c boot.autostart=true
 lxc config device add dev eth0 nic nictype=bridged parent=br0 name=eth0
 lxc start dev && lxc exec dev -- cloud-init status --wait
 lxc exec dev -- bash -c 'usermod -l fabio -d /home/fabio -m ubuntu && groupmod -n fabio ubuntu'
 lxc config device add dev projects disk source=/home/fabio/Projects path=/home/fabio/Projects shift=true
+lxc config device add dev orca disk source=/home/fabio/orca path=/home/fabio/orca shift=true
 lxc exec dev -- bash -c 'apt-get install -y docker.io docker-compose-v2 git make curl && usermod -aG docker fabio'
-install -m 755 ~/nucbox/devbox ~/.local/bin/devbox
-cat ~/nucbox/claude-devbox.md >> ~/.claude/CLAUDE.md   # tells Claude Code (Orca) to go through devbox
-cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
+install -m 755 nucbox/box ~/.local/claude-wrap/box && ln -sfn ~/.local/claude-wrap/box ~/.local/bin/dogchefbox
+# the rule for Claude Code (Orca) is nucbox/claude-devbox.md, kept in ~/.claude/CLAUDE.md
+cd ~/Projects/dogchef/dev && dogchefbox make setup && dogchefbox make start
 ```
 
 - Create the user before adding the `projects` disk: the mount creates `/home/fabio` as root and
   `usermod -m` then fails. Copy `~/.gitconfig`, the GitHub key and its `known_hosts` lines into the
   container's home; the mkcert CA comes from the Mac's `dev/.config/mkcert`.
-- `devbox` uses `lxc exec`, not ssh. The container's sshd (key-only) and dev-proxy's LAN ports exist
+- `dogchefbox` uses `lxc exec`, not ssh. The container's sshd (key-only) and dev-proxy's LAN ports exist
   for the Mac and are reachable from the NucBox's address only (`dev-lan-access.sh`, below).
-- `devbox` (`lxc exec … sudo -u fabio -H bash -l`) runs in the current directory as fabio with the
-  `docker` group; `lxc exec --user` alone gives gid 0 and no supplementary groups.
+- `dogchefbox` (`lxc exec … sudo -u fabio -H bash -l`) runs in the current directory as fabio with the
+  `docker` group, and refuses a folder that is not dogchef (exit 2, `is-business-dir.sh`, the rule `claude-wrap` uses); `lxc exec --user` alone gives gid 0 and no supplementary groups.
 - `br0` traffic does not go through ufw only because `br_netfilter` is not loaded
   (`lsmod | grep br_netfilter` empty). Loaded later, it would cut the container and the `haos` VM off;
   `/etc/sysctl.d/99-br0.conf` sets `net.bridge.bridge-nf-call-ip{,6}tables=0` at boot, and an
@@ -404,7 +405,7 @@ cd ~/Projects/dogchef/dev && devbox make setup && devbox make start
   WARP would take it) and pass it to `warp-cli registration token "<link>"`, then `warp-cli connect`.
   `make reset-db-{dogchef,vetchef,erp}` needs it.
 - After a reboot the container comes back but the stack does not (no restart policy in the compose):
-  `cd ~/Projects/dogchef/dev && devbox make start`.
+  `cd ~/Projects/dogchef/dev && dogchefbox make start`.
 - The `dev` repo's MCP servers run on the host with Claude Code: `uv`, the AWS CLI and the Google Cloud
   SDK live under `~/.local` and `~/google-cloud-sdk` (no sudo), `~/.bashrc` exports
   `GITHUB_PERSONAL_ACCESS_TOKEN` from `gh auth token`, and the AWS/gcloud logins are yours.
@@ -445,7 +446,7 @@ apps have no login in front of them; they rely on the Tailscale ACL below and on
 - **IPv6**: the drop rule matches no address family, so 22/80/443 over IPv6 time out on any
   address `eth0` has or gets (today only a link-local one).
 - **After a reboot** the filter and sshd come up with the container (`boot.autostart`), the LAN ports
-  with `devbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
+  with `dogchefbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
   `.69` before `.54`): reserve it in the router for its MAC (`lxc config get dev volatile.eth0.hwaddr`).
   If it changes anyway, dev-proxy still starts (`net.ipv4.ip_nonlocal_bind=1` in the container lets it
   bind the old address), but the apps are only reachable from the Mac again after running **both**
@@ -489,7 +490,7 @@ repo's `docker-compose.yml` (`MYSQL_ROOT_PASSWORD`).
 Rollback, in this order (the LAN ports close before the filter goes, so 80/443 are never open to the LAN):
 
 ```bash
-cd ~/Projects/dogchef/dev && rm docker-compose.override.yml && devbox docker compose -p fresh-chef up -d --no-deps proxy
+cd ~/Projects/dogchef/dev && rm docker-compose.override.yml && dogchefbox docker compose -p fresh-chef up -d --no-deps proxy
 lxc exec dev -- systemctl disable --now dev-lan-filter.service ssh.service
 lxc exec dev -- rm /etc/systemd/system/dev-lan-filter.service /etc/nftables-dev-lan.nft /etc/ssh/sshd_config.d/10-dev-lan.conf /etc/sysctl.d/60-dev-lan.conf
 lxc exec dev -- sysctl -w net.ipv4.ip_nonlocal_bind=0
