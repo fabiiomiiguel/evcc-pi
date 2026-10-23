@@ -3,16 +3,16 @@
 # no DHCP, no DNS from LXD. Safe to run again; no sudo, only lxc. Never touches `dev` or br0.
 #
 # dns.mode=none still starts LXD's dnsmasq with DNS on, which dies on Pi-hole's :53 ("Address already in use"),
-# so the bridge sets raw.dnsmasq port=0. The container gets a static address and public resolvers through cloud-init.
+# so the bridge sets raw.dnsmasq port=0. The container gets a static address and the host's Pi-hole (LAN address) as its only resolver through cloud-init.
 # Probed 2026-10-23: on this host ufw is active (input and forward default DROP), so TCP/UDP from the bridge to the
 # host (Pi-hole :53, DHCP) and forwarded to the internet are dropped while ICMP passes. The connectivity check below
-# stops with the commands that show the ufw rules (needs sudo) until ufw routes the bridge.
+# stops with the commands that show the ufw rules (needs sudo) until ufw routes the bridge and allows DNS to the Pi-hole.
 set -euo pipefail
 
 NET=${PERSONAL_NET:-lxdpersonal0}
 GW=${PERSONAL_GW:-10.250.50.1/24}
 IP=${PERSONAL_IP:-10.250.50.10/24}
-DNS=${PERSONAL_DNS:-1.1.1.1 9.9.9.9}
+DNS=${PERSONAL_DNS:-192.168.68.50}
 INST=${PERSONAL_INSTANCE:-personal}
 IMAGE=${PERSONAL_IMAGE:-ubuntu:26.04}
 CPU=${PERSONAL_CPU:-8}

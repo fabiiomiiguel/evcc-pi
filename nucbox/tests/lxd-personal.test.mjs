@@ -78,6 +78,16 @@ test("first run creates everything, second run only reads", () => {
   } finally { t.done(); }
 });
 
+test("the container's only resolver is the host's Pi-hole, no public fallback", () => {
+  const t = setup();
+  try {
+    assert.equal(t.run().status, 0);
+    const cfg = t.calls().join("\n");
+    assert.match(cfg, /nameservers: \{addresses: \[192\.168\.68\.50\]\}/);
+    assert.doesNotMatch(cfg, /1\.1\.1\.1\]|9\.9\.9\.9|10\.250\.50\.1\]/);
+  } finally { t.done(); }
+});
+
 test("a host that drops the container's egress stops before user, disks and packages", () => {
   const t = setup();
   try {

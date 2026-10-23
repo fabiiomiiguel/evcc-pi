@@ -422,8 +422,8 @@ lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounte
 ```
 
 - LXD's `dns.mode=none` still starts its dnsmasq with DNS on, which dies on Pi-hole's `:53`; the bridge therefore
-  sets `raw.dnsmasq=port=0`, and the container gets a static address and public resolvers (1.1.1.1, 9.9.9.9)
-  through cloud-init.
+  sets `raw.dnsmasq=port=0`, and the container gets a static address and the host's Pi-hole (192.168.68.50, `PERSONAL_DNS`) as its only resolver,
+  no public fallback, through cloud-init.
 - Run it from `nucbox/` (`cd ~/Projects/personal/evcc-pi/nucbox`).
 - The bridge is cut off from the LAN (192.168.68.0/22) and the tailnet (100.64.0.0/10) only by ufw rules; LXD adds none.
 - Probed on this host: ufw is active (`/etc/default/ufw`: input and forward default DROP), so with no rule for
@@ -436,7 +436,7 @@ lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounte
 sudo ufw route deny in on lxdpersonal0 to 192.168.68.0/22
 sudo ufw route deny in on lxdpersonal0 to 100.64.0.0/10
 sudo ufw route allow in on lxdpersonal0 out on br0
-sudo ufw allow in on lxdpersonal0 to 10.250.50.1 port 53   # optional: Pi-hole as resolver, then PERSONAL_DNS=10.250.50.1
+sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53   # INPUT to the Pi-hole, not hit by the route denies
 ```
 
 ### dogchef apps and DB from the Mac
