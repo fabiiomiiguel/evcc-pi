@@ -12,8 +12,22 @@ set -euo pipefail
 : "${PREVIEW_DOMAIN:?set PREVIEW_DOMAIN in .env}"
 : "${LAN_CIDR:?set LAN_CIDR in .env}"
 
-# Never a dev server: what listens on the box or is installed there, and well-known service ports (README table).
-DENY="3000 3306 5252 5900 6379 6768 7070 8080 8123 8443 8887 9090"
+# Never a dev server: listening now, installed but off, or a well-known service port (README table).
+DENY_PORTS=(
+  3000 # stellantis-worker, listening now
+  3306 # MySQL of dogchef dev, inside the LXD dev container
+  5252 # Tailscale web client, off; `tailscale set --webclient` would open it
+  5900 # VNC/SPICE autoport if the haos VM gets a graphical display (now -display none)
+  6379 # Redis of dogchef dev, inside the LXD dev container
+  6768 # Orca, listening now
+  7070 # evcc well-known UI port, lives in the VM or on the Pi
+  8080 # Pi-hole admin, listening now
+  8123 # Home Assistant well-known port (the VM serves on 80)
+  8443 # Pi-hole HTTPS admin, configured but off
+  8887 # OCPP from the wallbox, well-known, lives in the VM or on the Pi
+  9090 # Cockpit, listening now
+)
+DENY="${DENY_PORTS[*]}"
 
 # $1 = current Caddyfile, $2 = where to write the result
 render() {

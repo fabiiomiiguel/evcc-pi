@@ -284,7 +284,7 @@ path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not 
   | 6768 | Orca runtime (`0.0.0.0`) | `ss -ltnp`: `orca-ide` |
   | 7070 | evcc's default UI port | well-known (evcc runs in the HA VM / on the Pi) |
   | 8080 | Pi-hole web admin (`127.0.0.1`) | `curl`: `302 /admin/login`; `PIHOLE_WEB_PORT_HTTP` |
-  | 8123 | Home Assistant (in the `haos` VM) | well-known |
+  | 8123 | Home Assistant's well-known port; in the `haos` VM it serves on port 80 | probe 2026-10-23: 192.168.68.53 port 80 open, 8123 closed |
   | 8443 | Pi-hole HTTPS admin / LXD API (both off now) | `PIHOLE_WEB_PORT_HTTPS`; `lxc config get core.https_address` empty |
   | 8887 | OCPP from the wallbox, DNATed to the HA VM | `/etc/nucbox-nat.nft` |
   | 9090 | Cockpit | `systemctl list-sockets`: `cockpit.socket` |

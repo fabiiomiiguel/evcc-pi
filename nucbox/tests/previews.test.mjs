@@ -112,6 +112,10 @@ test("rendering again over its own output changes nothing but keeps the rest of 
   assert.equal(print(previews, input), once + other);
 });
 
+test("the denylist renders exactly these ports", () => {
+  assert.match(print(previews), /@denied header_regexp Host \^\(3000\|3306\|5252\|5900\|6379\|6768\|7070\|8080\|8123\|8443\|8887\|9090\)\\\./);
+});
+
 test("refused hosts get 404 before the login, from the tailnet and the LAN", async () => {
   for (const from of [TAILNET, LAN]) {
     for (const label of ["3000", "6768", "8080", "9090", "2999", "10000", "abc", "04321", "x4321"]) {
