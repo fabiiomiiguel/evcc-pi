@@ -6,12 +6,15 @@
 # so the bridge sets raw.dnsmasq port=0. The container gets a static address and the host's Pi-hole (LAN address) as its only resolver through cloud-init.
 # Probed 2026-10-23: on this host ufw is active (input and forward default DROP), so TCP/UDP from the bridge to the
 # host (Pi-hole :53, DHCP) and forwarded to the internet are dropped while ICMP passes. The connectivity check below
-# stops with the commands that show the ufw rules (needs sudo) until ufw routes the bridge and allows DNS to the Pi-hole.
+# stops with the commands that show the ufw rules (needs sudo) until two ufw rules exist (the user applies them):
+#   sudo ufw route allow in on lxdpersonal0 out on br0
+#   sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53
+# The ACL below is the only block for the LAN and the tailnet (the earlier ufw LAN route-deny was deleted once it was confirmed live).
 # ufw cannot stop the container reaching the tailnet: tailscale's ts-forward chain, jumped before ufw in FORWARD, accepts
 # everything out of tailscale0. So the bridge carries an LXD network ACL (nftables driver, no sudo) that drops egress to the
 # LAN and the tailnet; a drop in LXD's own chain wins over ts-forward's accept (probed 2026-10-23: tailnet peer ping and
 # 100.100.100.100:53 open without the ACL, blocked with it). ACL drops beat allows, so the LAN ranges skip PERSONAL_DNS
-# itself and its non-53 ports are dropped by their own rules; change PERSONAL_LAN_DROP together with PERSONAL_DNS.
+# itself and its non-53 tcp/udp ports and icmp4 are dropped by their own rules; change PERSONAL_LAN_DROP together with PERSONAL_DNS.
 set -euo pipefail
 
 NET=${PERSONAL_NET:-lxdpersonal0}
@@ -40,13 +43,29 @@ lxc network show "$NET" >/dev/null 2>&1 ||
   lxc network create "$NET" ipv4.address="$GW" ipv4.nat=true ipv4.dhcp=false ipv6.address=none dns.mode=none \
     raw.dnsmasq=port=0
 
-if ! lxc network acl show "$ACL" >/dev/null 2>&1; then
-  lxc network acl create "$ACL"
-  lxc network acl rule add "$ACL" egress action=drop state=enabled destination="$LAN_DROP"
-  for proto in tcp udp; do
-    lxc network acl rule add "$ACL" egress action=drop state=enabled protocol=$proto destination="$DNS" destination_port=1-52,54-65535
-  done
-fi
+# Rules are replaced on every run, so an ACL left empty by an interrupted run cannot leave LAN and tailnet open.
+# LXD ACLs cannot say "all protocols except 53", so 192.168.68.50 gets tcp and udp non-53 plus icmp4; other IP protocols to it pass.
+lxc network acl show "$ACL" >/dev/null 2>&1 || lxc network acl create "$ACL"
+lxc network acl edit "$ACL" <<YAML
+egress:
+- action: drop
+  state: enabled
+  destination: $LAN_DROP
+- action: drop
+  state: enabled
+  protocol: tcp
+  destination: $DNS
+  destination_port: 1-52,54-65535
+- action: drop
+  state: enabled
+  protocol: udp
+  destination: $DNS
+  destination_port: 1-52,54-65535
+- action: drop
+  state: enabled
+  protocol: icmp4
+  destination: $DNS
+YAML
 [[ $(lxc network get "$NET" security.acls) == "$ACL" ]] || lxc network set "$NET" security.acls="$ACL"
 [[ $(lxc network get "$NET" security.acls.default.egress.action) == allow ]] ||
   lxc network set "$NET" security.acls.default.egress.action=allow
@@ -81,14 +100,19 @@ for p in $PORTS; do add_device "p$p" proxy listen="tcp:127.0.0.1:$p" connect="tc
 add_device p3100 proxy listen=tcp:127.0.0.1:3100 connect=tcp:127.0.0.1:3000
 
 # php 8.4 comes from sury like on `dev` and the host (football-fines pins 8.4.x). Ubuntu's composer package would pull php 8.5
-# modules, so composer is the official phar. Any failing step stops the script.
+# modules, so composer is the official installer, checked against its published SHA-384. Any failing step stops the script.
 PROVISION='export DEBIAN_FRONTEND=noninteractive
-apt-get update && apt-get install -y ca-certificates curl gnupg
+apt-get update
+apt-get install -y ca-certificates curl gnupg
 curl -fsSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/deb.sury.org-php.gpg
 echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(. /etc/os-release && echo $VERSION_CODENAME) main" >/etc/apt/sources.list.d/sury-php.list
 curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt-get install -y docker.io docker-compose-v2 git make build-essential php8.4-cli php8.4-mbstring php8.4-intl php8.4-curl php8.4-zip php8.4-xml python3-venv python3-pip nodejs
-curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer && chmod +x /usr/local/bin/composer
+setup=$(mktemp)
+curl -fsSL https://getcomposer.org/installer -o "$setup"
+[ "$(curl -fsSL https://composer.github.io/installer.sig)" = "$(php -r "echo hash_file(\"sha384\", \"$setup\");")" ]
+php "$setup" --quiet --install-dir=/usr/local/bin --filename=composer
+rm "$setup"
 usermod -aG docker "$1" && corepack enable'
 ready() {
   in_box sudo -u "$USER_NAME" -H bash -lc 'php -r "exit(PHP_VERSION_ID>=80400&&PHP_VERSION_ID<80500?0:1);" && composer -V && docker ps && node -v && python3 -V' >/dev/null 2>&1
