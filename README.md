@@ -425,19 +425,31 @@ lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounte
   sets `raw.dnsmasq=port=0`, and the container gets a static address and the host's Pi-hole (192.168.68.50, `PERSONAL_DNS`) as its only resolver,
   no public fallback, through cloud-init.
 - Run it from `nucbox/` (`cd ~/Projects/personal/evcc-pi/nucbox`).
-- The bridge is cut off from the LAN (192.168.68.0/22) and the tailnet (100.64.0.0/10) only by ufw rules; LXD adds none.
 - Probed on this host: ufw is active (`/etc/default/ufw`: input and forward default DROP), so with no rule for
   `lxdpersonal0` TCP/UDP to the host (Pi-hole `:53`, DHCP) and forwarded to the internet are dropped while ICMP
   passes. The script then stops after creating the container, before provisioning, when it has no TCP egress or
-  cannot resolve a name, and prints `sudo ufw status verbose` (fallback `sudo nft list ruleset`). The ufw rules
-  that open it, in this order (first match wins), are not applied by the script (root):
+  cannot resolve a name, and prints `sudo ufw status verbose` (fallback `sudo nft list ruleset`). The three ufw
+  rules that open it, in this order (first match wins), are not applied by the script (root):
 
 ```bash
-sudo ufw route deny in on lxdpersonal0 to 192.168.68.0/22
-sudo ufw route deny in on lxdpersonal0 to 100.64.0.0/10
-sudo ufw route allow in on lxdpersonal0 out on br0
-sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53   # INPUT to the Pi-hole, not hit by the route denies
+sudo ufw route deny in on lxdpersonal0 to 192.168.68.0/22     # LAN (br0)
+sudo ufw route allow in on lxdpersonal0 out on br0            # the internet
+sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53    # INPUT to the Pi-hole, not hit by the route deny
 ```
+
+- There is no ufw rule for the tailnet on purpose: tailscale's `ts-forward` chain is jumped before ufw in `FORWARD`
+  and accepts everything out of `tailscale0` (same cause as "tailscale comes before ufw" above), so no ufw rule can
+  block it; measured: `100.100.100.100:53` and a peer's ping were open from the container. The script therefore also
+  creates an LXD network ACL `personal-egress` on `lxdpersonal0` (nftables driver, no sudo; default egress allow):
+  drop to 192.168.68.0/22 and 100.64.0.0/10, except 192.168.68.50 whose ports other than 53 are dropped by their own
+  tcp and udp rules (an ACL drop beats an allow, so the range skips the Pi-hole instead of allowing it;
+  `PERSONAL_LAN_DROP` changes it together with `PERSONAL_DNS`). With it the tailnet, the LAN and the Pi-hole's other
+  ports are blocked and DNS plus the internet work. Undo with the network delete above, then
+  `lxc network acl delete personal-egress`.
+- Provisioning follows `dev`: php 8.4 from the sury repo (football-fines pins 8.4.x; Ubuntu's own composer package
+  would pull php 8.5, so composer is the official phar in `/usr/local/bin`), docker.io + compose, node 24 from
+  NodeSource, python3-venv, corepack. Any failing step stops the script, which prints `ready` only when
+  `php` 8.4, `composer`, `docker ps`, `node` and `python3` work for `fabio` (docker group).
 
 ### dogchef apps and DB from the Mac
 

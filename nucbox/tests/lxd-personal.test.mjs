@@ -17,6 +17,9 @@ s=$STUB_STATE; echo "$*" >> "$s/calls"
 case "$1 $2" in
   "network show") [[ -e $s/net ]]; exit ;;
   "network create") touch "$s/net"; exit 0 ;;
+  "network acl") [[ $3 == show ]] && { [[ -e $s/acl ]]; exit; }; [[ $3 == create ]] && touch "$s/acl"; exit 0 ;;
+  "network get") cat "$s/set-$4" 2>/dev/null; exit 0 ;;
+  "network set") echo "\${4#*=}" > "$s/set-\${4%%=*}"; exit 0 ;;
   "list "*) [[ -e $s/running ]] && echo RUNNING
     # an unanchored pattern also matches personal-old
     [[ -e $s/oldrunning && $2 != ^* ]] && echo RUNNING; exit 0 ;;
@@ -33,8 +36,8 @@ case $cmd in
   "id "*) [[ -e $s/user ]]; exit ;;
   *usermod\\ -l*) touch "$s/user" ;;
   *"/dev/tcp/1.1.1.1"*) [[ -e $s/noegress ]] && exit 1; [[ -e $s/nodns && $cmd == *"getent hosts"* ]] && exit 1 ;;
-  *"command -v docker"*) [[ -e $s/prov ]]; exit ;;
-  *apt-get*) touch "$s/prov" ;;
+  "sudo -u fabio"*) [[ -e $s/prov && ! -e $s/stillbroken ]]; exit ;;
+  *apt-get*) [[ -e $s/aptfail ]] && exit 100; touch "$s/prov" ;;
 esac
 exit 0
 `;
@@ -67,13 +70,17 @@ test("first run creates everything, second run only reads", () => {
     for (const d of ["projects", "orca"]) assert.ok(has(new RegExp(`^config device add personal ${d} disk source=${t.home}/.* shift=true$`)), d);
     for (const p of [3010, 5000, 8000, 8010, 8026, 8125, 9001]) assert.ok(has(new RegExp(`^config device add personal p${p} proxy listen=tcp:127\\.0\\.0\\.1:${p} connect=tcp:127\\.0\\.0\\.1:${p}$`)), String(p));
     assert.ok(has(/^config device add personal p3100 proxy listen=tcp:127\.0\.0\.1:3100 connect=tcp:127\.0\.0\.1:3000$/));
-    assert.ok(has(/apt-get install -y docker\.io/) && has(/setup_24\.x/));
+    assert.ok(has(/apt-get install -y docker\.io .*php8\.4-cli php8\.4-mbstring .*python3-venv/) && has(/getcomposer\.org\/download\/latest-stable\/composer\.phar/) && has(/setup_24\.x/) && has(/packages\.sury\.org\/php\/apt\.gpg/));
+    assert.ok(has(/^network acl create personal-egress$/));
+    assert.ok(has(/^network acl rule add personal-egress egress action=drop state=enabled destination=192\.168\.68\.0-192\.168\.68\.49,192\.168\.68\.51-192\.168\.71\.255,100\.64\.0\.0\/10$/));
+    for (const proto of ["tcp", "udp"]) assert.ok(has(new RegExp(`^network acl rule add personal-egress egress action=drop state=enabled protocol=${proto} destination=192\\.168\\.68\\.50 destination_port=1-52,54-65535$`)), proto);
+    assert.ok(has(/^network set lxdpersonal0 security\.acls=personal-egress$/) && has(/^network set lxdpersonal0 security\.acls\.default\.egress\.action=allow$/));
     assert.ok(c1.every((l) => !/(^| )dev( |$)|br0/.test(l)), "touched dev or br0");
 
     t.reset();
     const r2 = t.run();
     assert.equal(r2.status, 0, r2.stderr);
-    const writes = t.calls().filter((l) => /^(network create|init|start|config device add)\b|usermod|apt-get/.test(l));
+    const writes = t.calls().filter((l) => /^(network create|network acl create|network acl rule|network set|init|start|config device add)\b|usermod|apt-get/.test(l));
     assert.deepEqual(writes, []);
   } finally { t.done(); }
 });
@@ -120,5 +127,36 @@ test("a running personal-old does not stand in for a stopped personal", () => {
     const r = t.run();
     assert.equal(r.status, 0, r.stderr);
     assert.ok(t.calls().some((l) => l === "start personal"));
+  } finally { t.done(); }
+});
+
+test("a failing provisioning step stops the run with a non-zero status and no ready line", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "aptfail"), "");
+    const r = t.run();
+    assert.notEqual(r.status, 0);
+    assert.doesNotMatch(r.stdout, /ready/);
+  } finally { t.done(); }
+});
+
+test("tools that are installed but unusable by the user stop the run", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "stillbroken"), "");
+    const r = t.run();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /php 8\.4, composer, docker, node or python3/);
+    assert.doesNotMatch(r.stdout, /ready/);
+  } finally { t.done(); }
+});
+
+test("readiness is checked as the user: php 8.4, composer, docker, node, python3", () => {
+  const t = setup();
+  try {
+    assert.equal(t.run().status, 0);
+    const l = t.calls().find((c) => /^exec personal -- sudo -u fabio -H bash -lc /.test(c));
+    assert.ok(l, "no readiness call");
+    for (const w of ["PHP_VERSION_ID>=80400", "composer -V", "docker ps", "node -v", "python3 -V"]) assert.ok(l.includes(w), w);
   } finally { t.done(); }
 });
