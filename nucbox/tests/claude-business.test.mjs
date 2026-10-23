@@ -38,6 +38,7 @@ test("first run sets up, second run changes nothing", () => {
     assert.ok(!t.read(".bashrc").includes("direnv"));
     assert.equal(t.read(".bashrc").match(/claude-wrap/g).length, 1);
     assert.equal(t.read(".local/claude-wrap/claude"), readFileSync(wrapSrc, "utf8"));
+    assert.equal(t.read(".local/claude-wrap/is-business-dir.sh"), readFileSync(new URL("../is-business-dir.sh", import.meta.url), "utf8"));
     assert.ok(statSync(join(t.home, ".local/claude-wrap/claude")).mode & 0o100);
     const before = [t.read(".bashrc")];
     const out = t.run();

@@ -31,6 +31,7 @@ if drop_line "$export_line" "$envrc"; then
 fi
 
 mkdir -p "$WRAP_DIR"
+install -m 644 "$(dirname "$0")/is-business-dir.sh" "$WRAP_DIR/"
 install -m 755 "$(dirname "$0")/claude-wrap" "$WRAP_DIR/claude"; say "wrapper installed in $WRAP_DIR"
 if grep -qxF "$path_line" "$BASHRC"; then say "wrapper PATH already in $BASHRC"; else
   printf '%s\n' "$path_line" >> "$BASHRC"; say "wrapper PATH added to $BASHRC"

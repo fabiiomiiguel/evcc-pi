@@ -4,10 +4,7 @@
 # Installed as ~/.local/claude-wrap/claude by claude-business.sh; execs the real binary by absolute path.
 # With CLAUDE_WRAP_GUARD set it is the UserPromptSubmit hook instead: it reads the hook JSON on stdin and exits 2
 # when the session's account is not the one this rule gives its cwd, else 0; any problem exits 0 (fail open).
-is_business_dir() {
-  local dogchef=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
-  [[ $1 == "$dogchef" || $1 == "$dogchef"/* ]] || [[ $(git -C "$1" remote get-url origin 2>/dev/null) == *dogchef-be/* ]]
-}
+. "$(dirname "$(realpath "$0")")/is-business-dir.sh"
 if [[ -n ${CLAUDE_WRAP_GUARD:-} ]]; then
   command -v jq >/dev/null || exit 0
   cwd=$(jq -r '.cwd // empty' 2>/dev/null) || exit 0
