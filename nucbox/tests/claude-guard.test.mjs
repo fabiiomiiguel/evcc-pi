@@ -47,6 +47,18 @@ test("account mismatch blocks, a match passes silently", () => {
   } finally { t.done(); }
 });
 
+test("GUARD=0 starts claude on the personal account and its guard lets prompts through", () => {
+  const t = setup();
+  try {
+    t.install();
+    const dog = join(t.home, "Projects/dogchef");
+    const run = (extra) => spawnSync("bash", [join(t.home, ".local/claude-wrap/claude")], { cwd: dog, input: JSON.stringify({ cwd: dog }), encoding: "utf8", env: { ...process.env, HOME: t.home, ...extra } });
+    assert.equal(run({ CLAUDE_WRAP_GUARD: "0" }).status, 0);
+    assert.ok(existsSync(join(t.home, "real-ran")), "GUARD=0 starts the real claude");
+    assert.equal(run({ CLAUDE_WRAP_GUARD: "1", CLAUDE_WRAP_BYPASS: "1" }).status, 0);
+  } finally { t.done(); }
+});
+
 test("garbage stdin, missing cwd and an unknown config dir fail open", () => {
   const t = setup();
   try {
