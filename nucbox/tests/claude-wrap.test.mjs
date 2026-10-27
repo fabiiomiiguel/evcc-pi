@@ -84,6 +84,6 @@ test("without is-business-dir.sh: normal mode exits 70 and never runs claude, gu
     assert.equal(r.status, 70);
     assert.equal(r.stdout, "");
     assert.match(r.stderr, /is-business-dir\.sh missing/);
-    assert.equal(go({ CLAUDE_WRAP_GUARD: "1" }).status, 0);
+    assert.equal(go({ CLAUDE_WRAP_HOOK: "1" }).status, 0);
   } finally { t.done(); }
 });

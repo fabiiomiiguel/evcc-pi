@@ -54,13 +54,15 @@ done
 
 # The guard runs as a UserPromptSubmit hook in the shared settings (~/.claude-business/settings.json is a symlink to it)
 settings=$CLAUDE_HOME/settings.json
-guard="CLAUDE_WRAP_GUARD=1 $WRAP_DIR/claude"
+guard="CLAUDE_WRAP_HOOK=1 $WRAP_DIR/claude"
+old_guard="CLAUDE_WRAP_GUARD=1 $WRAP_DIR/claude"  # before CLAUDE_WRAP_GUARD=0 became the bypass; replaced, not kept twice
 if ! command -v jq >/dev/null; then say "jq missing, account guard hook not added to $settings"
 elif jq -e --arg g "$guard" '[.hooks.UserPromptSubmit[]?.hooks[]?.command] | index($g)' "$settings" >/dev/null 2>&1; then say "account guard already in $settings"
 else
   [[ -e $settings.bak-claude-business ]] || cp "$settings" "$settings.bak-claude-business"
   tmp=$(mktemp)
-  jq --arg g "$guard" '.hooks.UserPromptSubmit += [{hooks: [{type: "command", command: $g, timeout: 5}]}]' "$settings" > "$tmp" \
+  jq --arg g "$guard" --arg o "$old_guard" '.hooks.UserPromptSubmit |= [.[]? | select([.hooks[]?.command] | index($o) | not)]
+    + [{hooks: [{type: "command", command: $g, timeout: 5}]}]' "$settings" > "$tmp" \
     && cat "$tmp" > "$settings" && say "account guard hook added to $settings (backup: $settings.bak-claude-business)"
   rm -f "$tmp"
 fi

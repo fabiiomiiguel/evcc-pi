@@ -2,13 +2,15 @@
 # Picks the Claude account by where it runs: dogchef repos (origin in dogchef-be/, any worktree location) and
 # ~/Projects/dogchef use ~/.claude-business; the rest keeps the default ~/.claude. A preset CLAUDE_CONFIG_DIR wins.
 # Installed as ~/.local/claude-wrap/claude by claude-business.sh; execs the real binary by absolute path.
-# With CLAUDE_WRAP_GUARD=1 it is the UserPromptSubmit hook instead: it reads the hook JSON on stdin and exits 2
+# With CLAUDE_WRAP_HOOK=1 it is the UserPromptSubmit hook instead: it reads the hook JSON on stdin and exits 2
 # when the session's account is not the one this rule gives its cwd, else 0; any problem exits 0 (fail open).
-# CLAUDE_WRAP_GUARD=0 is the bypass: the session keeps the personal account anywhere and its guard lets every prompt
-# through. The hook's own CLAUDE_WRAP_GUARD=1 prefix overwrites the inherited value, hence CLAUDE_WRAP_BYPASS to carry it.
-. "$(dirname "$(realpath "$0")")/is-business-dir.sh" 2>/dev/null || { [[ ${CLAUDE_WRAP_GUARD:-} == 1 ]] && exit 0; echo "claude-wrap: is-business-dir.sh missing next to $0" >&2; exit 70; }
-if [[ ${CLAUDE_WRAP_GUARD:-} == 1 ]]; then
-  [[ ${CLAUDE_WRAP_BYPASS:-} == 1 ]] && exit 0
+# CLAUDE_WRAP_GUARD=0 is the bypass: the session keeps the personal account anywhere, and the hook inherits the
+# variable and lets every prompt through. CLAUDE_WRAP_GUARD=1 is the hook's old name: sessions keep the hooks they
+# started with, and one still running the old command must not exec claude on every prompt.
+hook=0; [[ ${CLAUDE_WRAP_HOOK:-} == 1 || ${CLAUDE_WRAP_GUARD:-} == 1 ]] && hook=1
+. "$(dirname "$(realpath "$0")")/is-business-dir.sh" 2>/dev/null || { [[ $hook == 1 ]] && exit 0; echo "claude-wrap: is-business-dir.sh missing next to $0" >&2; exit 70; }
+if [[ $hook == 1 ]]; then
+  [[ ${CLAUDE_WRAP_GUARD:-} == 0 ]] && exit 0
   command -v jq >/dev/null || exit 0
   cwd=$(jq -r '.cwd // empty' 2>/dev/null) || exit 0
   [[ -d $cwd ]] || exit 0
@@ -22,6 +24,5 @@ if [[ ${CLAUDE_WRAP_GUARD:-} == 1 ]]; then
   echo "Wrong Claude account: this session uses the $using account but $cwd needs $want. Exit and start claude from a bash terminal in that folder." >&2
   exit 2
 fi
-if [[ ${CLAUDE_WRAP_GUARD:-} == 0 ]]; then export CLAUDE_WRAP_BYPASS=1
-elif [[ -z ${CLAUDE_CONFIG_DIR:-} ]] && is_business_dir "$PWD"; then export CLAUDE_CONFIG_DIR=$HOME/.claude-business; fi
+if [[ ${CLAUDE_WRAP_GUARD:-} != 0 && -z ${CLAUDE_CONFIG_DIR:-} ]] && is_business_dir "$PWD"; then export CLAUDE_CONFIG_DIR=$HOME/.claude-business; fi
 exec "$HOME/.local/bin/claude" "$@"

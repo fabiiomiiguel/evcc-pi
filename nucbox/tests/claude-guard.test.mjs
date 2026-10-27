@@ -23,7 +23,7 @@ function setup(settings = "{}") {
   delete env.CLAUDE_CONFIG_DIR;
   const install = () => execFileSync("bash", [script], { encoding: "utf8", env });
   const guard = (cwd, config, stdin = JSON.stringify({ cwd })) => {
-    const e = { ...env, CLAUDE_WRAP_GUARD: "1" };
+    const e = { ...env, CLAUDE_WRAP_HOOK: "1" };
     if (config) e.CLAUDE_CONFIG_DIR = join(home, config);
     return spawnSync("bash", [join(home, ".local/claude-wrap/claude")], { input: stdin, encoding: "utf8", env: e });
   };
@@ -47,7 +47,7 @@ test("account mismatch blocks, a match passes silently", () => {
   } finally { t.done(); }
 });
 
-test("GUARD=0 starts claude on the personal account and its guard lets prompts through", () => {
+test("GUARD=0 starts claude on the personal account, its hook lets prompts through; GUARD=1 is still the hook", () => {
   const t = setup();
   try {
     t.install();
@@ -55,7 +55,11 @@ test("GUARD=0 starts claude on the personal account and its guard lets prompts t
     const run = (extra) => spawnSync("bash", [join(t.home, ".local/claude-wrap/claude")], { cwd: dog, input: JSON.stringify({ cwd: dog }), encoding: "utf8", env: { ...process.env, HOME: t.home, ...extra } });
     assert.equal(run({ CLAUDE_WRAP_GUARD: "0" }).status, 0);
     assert.ok(existsSync(join(t.home, "real-ran")), "GUARD=0 starts the real claude");
-    assert.equal(run({ CLAUDE_WRAP_GUARD: "1", CLAUDE_WRAP_BYPASS: "1" }).status, 0);
+    rmSync(join(t.home, "real-ran"));
+    assert.equal(run({ CLAUDE_WRAP_HOOK: "1", CLAUDE_WRAP_GUARD: "0" }).status, 0);
+    assert.equal(run({ CLAUDE_WRAP_HOOK: "1" }).status, 2);
+    assert.equal(run({ CLAUDE_WRAP_GUARD: "1" }).status, 2);
+    assert.ok(!existsSync(join(t.home, "real-ran")), "hook mode, old name included, never starts the real claude");
   } finally { t.done(); }
 });
 
@@ -77,7 +81,7 @@ test("settings merge keeps other keys and hooks, backs up once, second run ident
   try {
     t.install();
     const s = t.settings();
-    const guard = `CLAUDE_WRAP_GUARD=1 ${join(t.home, ".local/claude-wrap/claude")}`;
+    const guard = `CLAUDE_WRAP_HOOK=1 ${join(t.home, ".local/claude-wrap/claude")}`;
     assert.equal(s.model, "opus");
     assert.deepEqual(s.hooks.Stop, mine.hooks.Stop);
     assert.deepEqual(s.hooks.UserPromptSubmit[0], mine.hooks.UserPromptSubmit[0]);
@@ -86,6 +90,17 @@ test("settings merge keeps other keys and hooks, backs up once, second run ident
     const before = readFileSync(join(t.home, ".claude/settings.json"), "utf8");
     t.install();
     assert.equal(readFileSync(join(t.home, ".claude/settings.json"), "utf8"), before);
+  } finally { t.done(); }
+});
+
+test("the old CLAUDE_WRAP_GUARD=1 hook is replaced, not kept beside the new one", () => {
+  const t = setup();
+  try {
+    const wrap = join(t.home, ".local/claude-wrap/claude");
+    const group = (command) => ({ hooks: [{ type: "command", command, timeout: 5 }] });
+    writeFileSync(join(t.home, ".claude/settings.json"), JSON.stringify({ hooks: { UserPromptSubmit: [group("mine"), group(`CLAUDE_WRAP_GUARD=1 ${wrap}`)] } }));
+    t.install();
+    assert.deepEqual(t.settings().hooks.UserPromptSubmit.map((g) => g.hooks[0].command), ["mine", `CLAUDE_WRAP_HOOK=1 ${wrap}`]);
   } finally { t.done(); }
 });
 

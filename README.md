@@ -342,13 +342,17 @@ real file there is left alone) and cleans the old direnv setup (the hook line in
 with the business account, `/status` to confirm. Orca only gets the wrapper after its unit is re-rendered and
 restarted (ends running agents): `bash nucbox/install-orca.sh && systemctl --user restart orca.service`. Undo: remove
 the PATH line in `~/.bashrc`, the marked block in `~/.profile`, `~/.local/claude-wrap`, `~/.claude-business`, the
-`UserPromptSubmit` entry whose command is `CLAUDE_WRAP_GUARD=1 ~/.local/claude-wrap/claude` in `~/.claude/settings.json`
+`UserPromptSubmit` entry whose command is `CLAUDE_WRAP_HOOK=1 ~/.local/claude-wrap/claude` in `~/.claude/settings.json`
 (the first run saved `settings.json.bak-claude-business` next to it), and re-render the unit.
 
-Account guard: a `UserPromptSubmit` hook (the wrapper itself run with `CLAUDE_WRAP_GUARD=1`, which never starts claude; needs `jq`)
+Account guard: a `UserPromptSubmit` hook (the wrapper itself run with `CLAUDE_WRAP_HOOK=1`, which never starts claude; needs `jq`)
 applies the wrapper's own rule to the session's `cwd`. When the session's account
 (`CLAUDE_CONFIG_DIR` pointing at `~/.claude-business`, or unset/`~/.claude`) is not the one expected, it blocks the prompt
 with a message; exit and start `claude` from a bash terminal in that folder. Any internal error lets the prompt through.
+Bypass: `CLAUDE_WRAP_GUARD=0 claude` keeps the personal account in any folder and the hook, which inherits the variable,
+lets every prompt through; it is read when the session starts, so turning it on or off means a new session (or a resume).
+The hook used to be `CLAUDE_WRAP_GUARD=1 …`; a re-run of the script replaces that entry, and the wrapper still treats the
+old name as the hook for sessions started before, which keep the hooks they started with.
 Tests: `node --test nucbox/tests/claude-business.test.mjs nucbox/tests/claude-wrap.test.mjs nucbox/tests/claude-guard.test.mjs`.
 
 ### Projects on the box
