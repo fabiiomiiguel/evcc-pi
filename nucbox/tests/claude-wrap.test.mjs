@@ -11,6 +11,12 @@ import { fileURLToPath } from "node:url";
 
 const wrap = fileURLToPath(new URL("../claude-wrap", import.meta.url));
 
+const cleanEnv = (home, extra = {}) => {
+  const env = { ...process.env, HOME: home };
+  for (const k of ["CLAUDE_WRAP_GUARD", "CLAUDE_WRAP_HOOK", "CLAUDE_WRAP_BYPASS", "CLAUDE_CONFIG_DIR"]) delete env[k];
+  return { ...env, ...extra };
+};
+
 function setup() {
   const home = mkdtempSync(join(tmpdir(), "cw-"));
   mkdirSync(join(home, ".local", "bin"), { recursive: true });
@@ -26,8 +32,7 @@ function setup() {
     return d;
   };
   const run = (cwd, extra = {}, args = ["a"]) => {
-    const env = { ...process.env, HOME: home, ...extra };
-    if (!("CLAUDE_CONFIG_DIR" in extra)) delete env.CLAUDE_CONFIG_DIR;
+    const env = cleanEnv(home, extra);
     return execFileSync("bash", [wrap, ...args], { cwd, encoding: "utf8", env }).trim();
   };
   return { home, repo, run, done: () => rmSync(home, { recursive: true, force: true }) };
@@ -55,6 +60,15 @@ test("another origin leaves it unset", () => {
   } finally { t.done(); }
 });
 
+test("CLAUDE_WRAP_GUARD=0 keeps the personal account in a dogchef repo; without it the same repo gets business", () => {
+  const t = setup();
+  try {
+    const d = t.repo("wt", "git@github.com:dogchef-be/dev.git");
+    assert.equal(t.run(d, { CLAUDE_WRAP_GUARD: "0" }), "real:unset:a");
+    assert.equal(t.run(d), `real:${t.home}/.claude-business:a`);
+  } finally { t.done(); }
+});
+
 test("a preset variable is kept", () => {
   const t = setup();
   try {
@@ -79,7 +93,7 @@ test("without is-business-dir.sh: normal mode exits 70 and never runs claude, gu
     mkdirSync(dir);
     const lone = join(dir, "claude-wrap");
     copyFileSync(wrap, lone);
-    const go = (extra) => spawnSync("bash", [lone, "a"], { cwd: t.home, encoding: "utf8", input: "{}", env: { ...process.env, HOME: t.home, ...extra } });
+    const go = (extra) => spawnSync("bash", [lone, "a"], { cwd: t.home, encoding: "utf8", input: "{}", env: cleanEnv(t.home, extra) });
     const r = go({});
     assert.equal(r.status, 70);
     assert.equal(r.stdout, "");

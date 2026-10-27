@@ -20,14 +20,14 @@ function setup(settings = "{}") {
   mkdirSync(join(home, ".local/bin"), { recursive: true });
   writeFileSync(join(home, ".local/bin/claude"), `#!/bin/sh\ntouch "${home}/real-ran"\n`, { mode: 0o755 });
   const env = { ...process.env, HOME: home };
-  delete env.CLAUDE_CONFIG_DIR;
+  for (const k of ["CLAUDE_WRAP_GUARD", "CLAUDE_WRAP_HOOK", "CLAUDE_WRAP_BYPASS", "CLAUDE_CONFIG_DIR"]) delete env[k];
   const install = () => execFileSync("bash", [script], { encoding: "utf8", env });
   const guard = (cwd, config, stdin = JSON.stringify({ cwd })) => {
     const e = { ...env, CLAUDE_WRAP_HOOK: "1" };
     if (config) e.CLAUDE_CONFIG_DIR = join(home, config);
     return spawnSync("bash", [join(home, ".local/claude-wrap/claude")], { input: stdin, encoding: "utf8", env: e });
   };
-  return { home, install, guard, settings: () => JSON.parse(readFileSync(join(home, ".claude/settings.json"), "utf8")), done: () => rmSync(home, { recursive: true, force: true }) };
+  return { home, env, install, guard, settings: () => JSON.parse(readFileSync(join(home, ".claude/settings.json"), "utf8")), done: () => rmSync(home, { recursive: true, force: true }) };
 }
 
 test("account mismatch blocks, a match passes silently", () => {
@@ -52,7 +52,7 @@ test("GUARD=0 starts claude on the personal account, its hook lets prompts throu
   try {
     t.install();
     const dog = join(t.home, "Projects/dogchef");
-    const run = (extra) => spawnSync("bash", [join(t.home, ".local/claude-wrap/claude")], { cwd: dog, input: JSON.stringify({ cwd: dog }), encoding: "utf8", env: { ...process.env, HOME: t.home, ...extra } });
+    const run = (extra) => spawnSync("bash", [join(t.home, ".local/claude-wrap/claude")], { cwd: dog, input: JSON.stringify({ cwd: dog }), encoding: "utf8", env: { ...t.env, ...extra } });
     assert.equal(run({ CLAUDE_WRAP_GUARD: "0" }).status, 0);
     assert.ok(existsSync(join(t.home, "real-ran")), "GUARD=0 starts the real claude");
     rmSync(join(t.home, "real-ran"));
@@ -101,6 +101,23 @@ test("the old CLAUDE_WRAP_GUARD=1 hook is replaced, not kept beside the new one"
     writeFileSync(join(t.home, ".claude/settings.json"), JSON.stringify({ hooks: { UserPromptSubmit: [group("mine"), group(`CLAUDE_WRAP_GUARD=1 ${wrap}`)] } }));
     t.install();
     assert.deepEqual(t.settings().hooks.UserPromptSubmit.map((g) => g.hooks[0].command), ["mine", `CLAUDE_WRAP_HOOK=1 ${wrap}`]);
+  } finally { t.done(); }
+});
+
+test("old and new entries side by side: only the old hook object goes, its siblings stay, a second run changes nothing", () => {
+  const t = setup();
+  try {
+    const wrap = join(t.home, ".local/claude-wrap/claude");
+    const hook = (command) => ({ type: "command", command, timeout: 5 });
+    const oldH = hook(`CLAUDE_WRAP_GUARD=1 ${wrap}`);
+    const newH = hook(`CLAUDE_WRAP_HOOK=1 ${wrap}`);
+    const settings = { hooks: { UserPromptSubmit: [{ hooks: [hook("keep"), oldH] }, { hooks: [oldH] }, { hooks: [newH] }] } };
+    writeFileSync(join(t.home, ".claude/settings.json"), JSON.stringify(settings));
+    t.install();
+    assert.deepEqual(t.settings().hooks.UserPromptSubmit, [{ hooks: [hook("keep")] }, { hooks: [newH] }]);
+    const before = readFileSync(join(t.home, ".claude/settings.json"), "utf8");
+    t.install();
+    assert.equal(readFileSync(join(t.home, ".claude/settings.json"), "utf8"), before);
   } finally { t.done(); }
 });
 

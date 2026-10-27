@@ -349,8 +349,11 @@ Account guard: a `UserPromptSubmit` hook (the wrapper itself run with `CLAUDE_WR
 applies the wrapper's own rule to the session's `cwd`. When the session's account
 (`CLAUDE_CONFIG_DIR` pointing at `~/.claude-business`, or unset/`~/.claude`) is not the one expected, it blocks the prompt
 with a message; exit and start `claude` from a bash terminal in that folder. Any internal error lets the prompt through.
-Bypass: `CLAUDE_WRAP_GUARD=0 claude` keeps the personal account in any folder and the hook, which inherits the variable,
-lets every prompt through; it is read when the session starts, so turning it on or off means a new session (or a resume).
+Bypass: `CLAUDE_WRAP_GUARD=0 claude` keeps the personal account in any folder and the hook, which inherits the
+variable, lets every prompt through, even for a business session (preset `CLAUDE_CONFIG_DIR`) in a personal folder.
+Children inherit it on purpose: every agent or `claude` the bypassed session launches runs unguarded too. Set it only
+by starting a session with it, never from a profile, bashrc or unit; it is read when the session starts, so turning it
+on or off means a new session (or a resume). Do not export `CLAUDE_WRAP_GUARD=1` by hand: hook mode is `CLAUDE_WRAP_HOOK=1`.
 The hook used to be `CLAUDE_WRAP_GUARD=1 …`; a re-run of the script replaces that entry, and the wrapper still treats the
 old name as the hook for sessions started before, which keep the hooks they started with.
 Tests: `node --test nucbox/tests/claude-business.test.mjs nucbox/tests/claude-wrap.test.mjs nucbox/tests/claude-guard.test.mjs`.
