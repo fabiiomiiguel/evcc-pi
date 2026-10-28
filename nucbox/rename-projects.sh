@@ -144,20 +144,26 @@ stop_orca() {
   verify "no Orca process left (quit the Orca app if it is still open)" bash -c '! pgrep -f /opt/Orca/ >/dev/null'
 }
 
-# "<container> <volume>:<destination> ..." per running container; the slot replicas (dev-apps-<slug>) are recreated by slot.sh
+# "<container> <volume>:<destination>", one line per named volume of a running container (docker ranges .Mounts over a map,
+# so only a per-mount line compares stably). The slot replicas (dev-apps-<slug>) are left out: slot.sh recreates them and
+# they mount only the shared external caches (dev-npm-cache, dev-playwright, dev-composer-cache), which the volume ls check covers.
 volume_mounts() {
-  (cd "$1" && dogchefbox bash -c 'docker ps -q | xargs -r docker inspect --format "{{.Name}} {{range .Mounts}}{{if .Name}}{{.Name}}:{{.Destination}} {{end}}{{end}}"') | grep -v '^/dev-apps-' | sort
+  (cd "$1" && dogchefbox bash -c 'docker ps -q | xargs -r docker inspect --format "{{\$n := .Name}}{{range .Mounts}}{{if .Name}}{{\$n}} {{.Name}}:{{.Destination}}{{\"\\n\"}}{{end}}{{end}}"') |
+    sed '/^\/dev-apps-/d;/^$/d' | sort
 }
-# the factory records still open (no Status, or one not starting with done) whose Folder: line names the old path
+# the factory records with an explicit Status: not starting with done or stopped (no Status line = history) whose Folder:
+# line names the old path
 open_task_files() {
-  local f
+  local f st
   while IFS= read -r f; do
-    grep -qE "^Folder:.*$OLD_RE([^A-Za-z0-9_.-]|\$)" "$f" && ! grep -qE '^Status:[[:space:]]*done' "$f" && echo "$f"
+    grep -qE "^Folder:.*$OLD_RE([^A-Za-z0-9_.-]|\$)" "$f" || continue
+    st=$(grep -m1 '^Status:' "$f" || true)
+    [[ -n $st ]] && ! grep -qiE '^Status:[[:space:]]*(done|stopped)' <<<"$st" && echo "$f"
   done < <(find "$TASKS" -name task.md 2>/dev/null) || true
 }
 
 backup() {
-  step "back up to $BK" "nothing changed yet; delete $BK if it is partial"
+  step "back up to $BK" "nothing changed yet; delete $BK if it is partial; systemctl --user start orca.service"
   if [[ -e $BK/.done ]]; then say "backup already complete ($BK/.done)"; return; fi
   if [[ -L $OLD || -d $NEW ]]; then die "$OLD is renamed already but no complete backup exists in $BK: a backup now would hold the after-state; restore the before-state from the first run's backup or finish by hand"; fi
   run mkdir -p "$BK"
@@ -167,7 +173,7 @@ backup() {
   done
   [[ -d $WRAP ]] && run cp -a --parents "$WRAP" "$BK/"
   [[ -d $OLD/$HANDOFFS ]] && run cp -a --parents "$OLD/$HANDOFFS" "$BK/"
-  for f in $(open_task_files); do run cp -a --parents "$f" "$BK/"; done
+  while IFS= read -r f; do run cp -a --parents "$f" "$BK/"; done < <(open_task_files)
   local i
   for i in dev personal; do
     has_instance "$i" && { if ((DRY)); then echo "+ lxc config show $i > $BK/lxc-$i.txt"; else lxc config show "$i" > "$BK/lxc-$i.txt"; fi; }
@@ -331,7 +337,11 @@ task_folders() {
   step "factory task folders: Folder: lines of open records" "cp -a $BK$TASKS/. $TASKS/"
   local files; files=$(open_task_files)
   if [[ -z $files ]]; then say "no open record names $OLD"; return; fi
-  if ((DRY)); then echo "+ Folder: lines that change:"; xargs -d '\n' grep -Hnm1 '^Folder:' <<<"$files"; return; fi
+  if ((DRY)); then
+    echo "+ Folder: lines that change:"
+    local f; while IFS= read -r f; do echo "$(grep -Hnm1 '^Folder:' "$f")  [$(grep -m1 '^Status:' "$f")]"; done <<<"$files"
+    return
+  fi
   xargs -d '\n' sed -i -E "/^Folder:/s#$OLD_RE([^A-Za-z0-9_.-]|\$)#$NEW\1#" <<<"$files"
   verify "no open record's Folder: line names $OLD" test -z "$(open_task_files)"
 }

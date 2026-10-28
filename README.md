@@ -432,7 +432,7 @@ with its rollback: stop Orca; back up to `~/backup-projects-rename` (a fixed nam
 git links before-state, docker volumes and their mounts, open factory `task.md` files); stop the stack and containers; `mv` + the compat symlink `~/Projects -> projects`; rewrite the git worktree
 links; Claude state (project dirs, json paths, history `project` fields); install box and wrapper; LXD disks (`dev` dogchef only, `personal`
 the rest); restart, `dogchefbox make start` and the slots (named volumes kept and checked: the same containers must mount the same volumes); the `~/.claude/CLAUDE.md` block from
-`claude-devbox.md`; handoffs `devbox` -> `dogchefbox`; the `Folder:` line of open factory records under `~/.factory/tasks`; `devbox` -> box; the Orca registry (payload and its sha256 `content_hash`).
+`claude-devbox.md`; handoffs `devbox` -> `dogchefbox`; the `Folder:` line of open factory records under `~/.factory/tasks` (an explicit `Status:` not starting with done or stopped; a record without one is history); `devbox` -> box; the Orca registry (payload and its sha256 `content_hash`).
 A re-run continues where it stopped.
 
 Whole rollback: stop sessions, Orca and containers; `rm ~/Projects && mv ~/projects ~/Projects`; restore the files from the backup

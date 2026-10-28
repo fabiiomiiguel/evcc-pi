@@ -22,7 +22,9 @@ case "$1" in
   start) [[ ! -e $s/fail-start ]] || { echo "start failed" >&2; exit 1; }; echo RUNNING > "$s/state-$2" ;;
   stop) echo STOPPED > "$s/state-$2" ;;
   exec) case "$*" in *"volume ls"*) cat "$s/volumes" ;;
-    *Destination*) if grep -q "make start" "$s/calls"; then cat "$s/volmounts-after"; else cat "$s/volmounts"; fi ;;
+    *Destination*) f=$s/volmounts; if grep -q "make start" "$s/calls"; then f=$s/volmounts-after; fi
+      # the fixtures hold one line per container in docker's (unstable) mount order; render per mount when the format does
+      case "$*" in *':= .Name}}'*) awk '{for (i = 2; i <= NF; i++) print $1, $i}' "$f" ;; *) cat "$f" ;; esac ;;
     *"docker inspect"*) cat "$s/mounts" ;; esac ;;
   config) case "$2" in
     show) echo "config of $3" ;;
@@ -93,6 +95,9 @@ function setup() {
   mk(".factory/tasks/p/u1/r-open"); mk(".factory/tasks/p/u1/r-done");
   w(".factory/tasks/p/u1/r-open/task.md", `# T\nFolder: ${O}/personal/evcc-pi (read only)\nStatus: fix\nContext: ${O}/personal/evcc-pi stays\n`);
   w(".factory/tasks/p/u1/r-done/task.md", `Folder: ${O}/personal/evcc-pi\nStatus: done\n`);
+  mk(".factory/tasks/p/u1/r-nostatus"); mk(".factory/tasks/p/u1/r-stopped");
+  w(".factory/tasks/p/u1/r-nostatus/task.md", `Folder: ${O}/personal/evcc-pi\n`);
+  w(".factory/tasks/p/u1/r-stopped/task.md", `Folder: ${O}/personal/evcc-pi\nStatus: Stopped by the user\n`);
 
   // Orca registry: one row names the old path, content_hash is the sha256 of the payload
   const db = join(home, ".config/orca/profiles/local-default/profile-state.db");
@@ -124,7 +129,8 @@ test("dry-run prints the steps and changes nothing", () => {
     assert.deepEqual(t.calls().filter((l) => /^(stop|start|config device (add|remove)|exec)|systemctl --user (stop|start)/.test(l)), []);
     assert.match(t.read(".claude/settings.json"), /Projects/);
     assert.match(r.stdout, /dev\.md:1:run devbox make start/, "dry-run shows the handoff lines it would change");
-    assert.match(r.stdout, /task\.md:2:Folder: .*evc?c-pi/, "and the task folders");
+    assert.match(r.stdout, /r-open\/task\.md:2:Folder: .*evcc-pi.*Status: fix/, "and the task folders with their Status");
+    assert.doesNotMatch(r.stdout, /r-(nostatus|stopped|done)\/task\.md/, "only records with an open Status");
     assert.match(r.stdout, /cloud-init status/, "and the cloud-init wait");
   } finally { t.done(); }
 });
@@ -180,6 +186,10 @@ test("a live run does every step, and a second run changes nothing", () => {
     assert.equal(t.read("projects/dogchef/handoffs/odd.md"), `see \`${N}/dogchef\` and (${N}/ffv0) and $HOME/projects/oss, ~/projects.\nLinear Projects stay; ${N}/dogchef/x.md\n`);
     assert.equal(t.read(".factory/tasks/p/u1/r-open/task.md"), `# T\nFolder: ${N}/personal/evcc-pi (read only)\nStatus: fix\nContext: ${t.O}/personal/evcc-pi stays\n`);
     assert.match(t.read(".factory/tasks/p/u1/r-done/task.md"), /Projects/, "a done record is left alone");
+    assert.match(t.read(".factory/tasks/p/u1/r-nostatus/task.md"), /Projects/, "a record without Status is history");
+    assert.match(t.read(".factory/tasks/p/u1/r-stopped/task.md"), /Projects/, "a stopped record is left alone");
+    for (const r of ["r-nostatus", "r-stopped", "r-done"])
+      assert.ok(!existsSync(join(t.home, "backup-projects-rename", t.home, `.factory/tasks/p/u1/${r}`)), `${r} is not backed up`);
     assert.match(readFileSync(join(t.home, "backup-projects-rename", t.home, ".factory/tasks/p/u1/r-open/task.md"), "utf8"), /Folder: .*Projects/);
     assert.match(readFileSync(join(t.home, "backup-projects-rename/volmounts-before.txt"), "utf8"), /dev_mysql:\/var\/lib\/mysql/);
     assert.equal(readlinkSync(join(t.home, ".local/bin/devbox")), join(t.home, ".local/claude-wrap/box"));
@@ -265,6 +275,7 @@ test("no backup is taken once the old path is already a symlink and no backup is
     sh(`mv ${t.O} ${t.home}/projects && ln -s projects ${t.O}`);
     const r = t.run(["--no-slots"]);
     assert.notEqual(r.status, 0); assert.match(r.stderr, /no complete backup/);
+    assert.match(r.stderr, /Rollback for this step: .*systemctl --user start orca\.service/, "Orca was stopped in step 1");
   } finally { t.done(); }
 });
 
@@ -298,5 +309,26 @@ test("only the symlink is made when a failed run left projects without it", () =
     const r = t.run(["--no-slots"], { BACKUP_DIR: bk });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(readlinkSync(t.O), "projects");
+  } finally { t.done(); }
+});
+
+test("a backup with only slot replicas running succeeds (the stack is down after a reboot)", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "volmounts"), "/dev-apps-sup-1 dev-npm-cache:/home/dogchef/.npm \n");
+    writeFileSync(join(t.state, "volmounts-after"), "");
+    const r = t.run(["--no-slots"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(readFileSync(join(t.home, "backup-projects-rename/volmounts-before.txt"), "utf8"), "");
+  } finally { t.done(); }
+});
+
+test("a container whose volumes come back in another order passes the mount check", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "volmounts"), "/dev-mysql dev_mysql:/var/lib/mysql dev_logs:/var/log/mysql \n");
+    writeFileSync(join(t.state, "volmounts-after"), "/dev-mysql dev_logs:/var/log/mysql dev_mysql:/var/lib/mysql \n");
+    const r = t.run(["--no-slots"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
   } finally { t.done(); }
 });
