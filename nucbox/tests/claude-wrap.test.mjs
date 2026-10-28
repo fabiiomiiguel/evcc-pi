@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const wrap = fileURLToPath(new URL("../claude-wrap", import.meta.url));
@@ -23,7 +23,7 @@ function setup() {
   const real = join(home, ".local", "bin", "claude");
   writeFileSync(real, '#!/usr/bin/env bash\necho "real:${CLAUDE_CONFIG_DIR-unset}:$*"\n');
   chmodSync(real, 0o755);
-  mkdirSync(join(home, "Projects", "dogchef"), { recursive: true });
+  mkdirSync(join(home, "projects", "dogchef"), { recursive: true });
   const repo = (name, origin) => {
     const d = join(home, name);
     mkdirSync(d);
@@ -49,7 +49,7 @@ test("dogchef-be origin gets the business dir", () => {
 test("a non-git dir under DOGCHEF_DIR gets the business dir", () => {
   const t = setup();
   try {
-    assert.equal(t.run(join(t.home, "Projects", "dogchef")), `real:${t.home}/.claude-business:a`);
+    assert.equal(t.run(join(t.home, "projects", "dogchef")), `real:${t.home}/.claude-business:a`);
   } finally { t.done(); }
 });
 
@@ -99,5 +99,16 @@ test("without is-business-dir.sh: normal mode exits 70 and never runs claude, gu
     assert.equal(r.stdout, "");
     assert.match(r.stderr, /is-business-dir\.sh missing/);
     assert.equal(go({ CLAUDE_WRAP_HOOK: "1" }).status, 0);
+  } finally { t.done(); }
+});
+
+test("is_business_dir knows ~/projects/dogchef, not the old ~/Projects/dogchef", () => {
+  const t = setup();
+  try {
+    const check = (dir) => spawnSync("bash", ["-c", `. "$1" && is_business_dir "$2"`, "_", join(dirname(wrap), "is-business-dir.sh"), dir], { env: cleanEnv(t.home) }).status;
+    mkdirSync(join(t.home, "Projects/dogchef/x"), { recursive: true });
+    mkdirSync(join(t.home, "projects/dogchef/x"), { recursive: true });
+    assert.equal(check(join(t.home, "projects/dogchef/x")), 0);
+    assert.equal(check(join(t.home, "Projects/dogchef/x")), 1);
   } finally { t.done(); }
 });

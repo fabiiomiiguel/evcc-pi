@@ -12,7 +12,7 @@ const script = fileURLToPath(new URL("../claude-business.sh", import.meta.url));
 
 function setup(settings = "{}") {
   const home = mkdtempSync(join(tmpdir(), "cg-"));
-  for (const d of [".claude/skills", ".claude/plugins", "Projects/dogchef", "Projects/personal", "wt"]) mkdirSync(join(home, d), { recursive: true });
+  for (const d of [".claude/skills", ".claude/plugins", "projects/dogchef", "projects/personal", "wt"]) mkdirSync(join(home, d), { recursive: true });
   writeFileSync(join(home, ".claude/CLAUDE.md"), "x");
   writeFileSync(join(home, ".claude/settings.json"), settings);
   execFileSync("git", ["-C", join(home, "wt"), "init", "-q"]);
@@ -34,10 +34,10 @@ test("account mismatch blocks, a match passes silently", () => {
   const t = setup();
   try {
     t.install();
-    const dog = join(t.home, "Projects/dogchef/dev");
+    const dog = join(t.home, "projects/dogchef/dev");
     mkdirSync(dog);
-    const cases = [[dog, undefined, 2], [dog, ".claude-business", 0], [join(t.home, "Projects/personal"), ".claude-business", 2],
-      [join(t.home, "Projects/personal"), undefined, 0], [join(t.home, "Projects/personal"), ".claude", 0], [join(t.home, "wt"), undefined, 2], [join(t.home, "wt"), ".claude-business", 0]];
+    const cases = [[dog, undefined, 2], [dog, ".claude-business", 0], [join(t.home, "projects/personal"), ".claude-business", 2],
+      [join(t.home, "projects/personal"), undefined, 0], [join(t.home, "projects/personal"), ".claude", 0], [join(t.home, "wt"), undefined, 2], [join(t.home, "wt"), ".claude-business", 0]];
     for (const [cwd, cfg, code] of cases) {
       const r = t.guard(cwd, cfg);
       assert.equal(r.status, code, `${cwd} ${cfg}`);
@@ -51,7 +51,7 @@ test("GUARD=0 starts claude on the personal account, its hook lets prompts throu
   const t = setup();
   try {
     t.install();
-    const dog = join(t.home, "Projects/dogchef");
+    const dog = join(t.home, "projects/dogchef");
     const run = (extra) => spawnSync("bash", [join(t.home, ".local/claude-wrap/claude")], { cwd: dog, input: JSON.stringify({ cwd: dog }), encoding: "utf8", env: { ...t.env, ...extra } });
     assert.equal(run({ CLAUDE_WRAP_GUARD: "0" }).status, 0);
     assert.ok(existsSync(join(t.home, "real-ran")), "GUARD=0 starts the real claude");
@@ -70,7 +70,7 @@ test("garbage stdin, missing cwd and an unknown config dir fail open", () => {
     assert.equal(t.guard("/", undefined, "not json").status, 0);
     assert.equal(t.guard("/", undefined, "{}").status, 0);
     assert.equal(t.guard("/nope/x", undefined).status, 0);
-    assert.equal(t.guard(join(t.home, "Projects/dogchef"), "elsewhere").status, 0);
+    assert.equal(t.guard(join(t.home, "projects/dogchef"), "elsewhere").status, 0);
     assert.ok(!existsSync(join(t.home, "real-ran")), "guard mode never starts the real claude");
   } finally { t.done(); }
 });

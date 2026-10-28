@@ -56,7 +56,7 @@ function setup() {
   const state = join(home, "state");
   mkdirSync(join(home, "bin"));
   mkdirSync(state);
-  for (const d of ["Projects/dogchef", "Projects/personal", "orca/workspaces/dev/SUP-1", "orca/workspaces/mine/x", "orca/workspaces/empty"]) mkdirSync(join(home, d), { recursive: true });
+  for (const d of ["projects/dogchef", "projects/personal", "orca/workspaces/dev/SUP-1", "orca/workspaces/mine/x", "orca/workspaces/empty"]) mkdirSync(join(home, d), { recursive: true });
   // a workspace is dogchef when a worktree's origin is in dogchef-be/
   const git = (...a) => spawnSync("git", ["-C", join(home, "orca/workspaces/dev/SUP-1"), ...a]);
   git("init", "-q"); git("remote", "add", "origin", "ssh://git@github.com/dogchef-be/dev.git");
@@ -79,7 +79,7 @@ test("first run creates everything, second run only reads", () => {
     assert.ok(has(/^start personal$/));
     assert.ok(has(/usermod -l fabio/));
     for (const d of ["m-p-personal", "m-o-mine", "m-o-empty"]) assert.ok(has(new RegExp(`^config device add personal ${d} disk source=${t.home}/.* path=${t.home}/.* shift=true$`)), d);
-    assert.ok(has(new RegExp(`^exec personal -- install -d -o fabio -g fabio -m 755 ${t.home}/Projects ${t.home}/orca ${t.home}/orca/workspaces$`)), "mount parents stay root-only");
+    assert.ok(has(new RegExp(`^exec personal -- install -d -o fabio -g fabio -m 755 ${t.home}/projects ${t.home}/orca ${t.home}/orca/workspaces$`)), "mount parents stay root-only");
     assert.ok(c1.every((l) => !/dogchef|workspaces\/dev|device add personal (projects|orca) /.test(l.replace(t.home, ""))), "mounted dogchef files or a whole tree");
     for (const p of [3010, 5000, 8000, 8010, 8026, 8125, 9001]) assert.ok(has(new RegExp(`^config device add personal p${p} proxy listen=tcp:127\\.0\\.0\\.1:${p} connect=tcp:127\\.0\\.0\\.1:${p}$`)), String(p));
     assert.ok(has(/^config device add personal p3100 proxy listen=tcp:127\.0\.0\.1:3100 connect=tcp:127\.0\.0\.1:3000$/));
@@ -204,7 +204,7 @@ test("a re-run adds a new personal dir, removes stale mounts and the old whole-t
   const t = setup();
   try {
     for (const d of ["projects", "orca", "m-p-gone"]) writeFileSync(join(t.state, `dev-${d}`), "");
-    mkdirSync(join(t.home, "Projects/newrepo"));
+    mkdirSync(join(t.home, "projects/newrepo"));
     mkdirSync(join(t.home, "orca/workspaces/fresh"));
     assert.equal(t.run().status, 0);
     const c = t.calls();

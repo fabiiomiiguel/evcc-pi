@@ -22,7 +22,7 @@ function setup() {
   mkdirSync(join(home, ".claude", "plugins"));
   writeFileSync(join(home, ".claude", "CLAUDE.md"), "x");
   writeFileSync(join(home, ".claude", "settings.json"), "{}");
-  mkdirSync(join(home, "Projects", "dogchef"), { recursive: true });
+  mkdirSync(join(home, "projects", "dogchef"), { recursive: true });
   const run = () => execFileSync("bash", [script], { encoding: "utf8", env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` } });
   const read = (p) => readFileSync(join(home, p), "utf8");
   return { home, run, read, done: () => rmSync(home, { recursive: true, force: true }) };
@@ -34,7 +34,7 @@ test("first run sets up, second run changes nothing", () => {
     t.run();
     assert.equal(readlinkSync(join(t.home, ".claude-business", "skills")), join(t.home, ".claude", "skills"));
     for (const n of ["CLAUDE.md", "settings.json", "skills", "plugins"]) assert.ok(lstatSync(join(t.home, ".claude-business", n)).isSymbolicLink());
-    assert.ok(!existsSync(join(t.home, "Projects/dogchef/.envrc")));
+    assert.ok(!existsSync(join(t.home, "projects/dogchef/.envrc")));
     assert.ok(!t.read(".bashrc").includes("direnv"));
     assert.equal(t.read(".bashrc").match(/claude-wrap/g).length, 1);
     assert.equal(t.read(".local/claude-wrap/claude"), readFileSync(wrapSrc, "utf8"));
@@ -51,7 +51,7 @@ test("first run sets up, second run changes nothing", () => {
 const HOOK = 'eval "$(direnv hook bash)"';
 const oldLayout = (t, envrc) => {
   writeFileSync(join(t.home, ".bashrc"), `alias a=b\n${HOOK}\n`);
-  writeFileSync(join(t.home, "Projects/dogchef/.envrc"), envrc);
+  writeFileSync(join(t.home, "projects/dogchef/.envrc"), envrc);
 };
 
 test("old layout: hook and a lone export line are removed, the .envrc deleted, second run identical", () => {
@@ -61,7 +61,7 @@ test("old layout: hook and a lone export line are removed, the .envrc deleted, s
     t.run();
     assert.ok(!t.read(".bashrc").includes("direnv"));
     assert.ok(t.read(".bashrc").includes("alias a=b"));
-    assert.ok(!existsSync(join(t.home, "Projects/dogchef/.envrc")));
+    assert.ok(!existsSync(join(t.home, "projects/dogchef/.envrc")));
     const before = t.read(".bashrc");
     t.run();
     assert.equal(t.read(".bashrc"), before);
@@ -73,7 +73,7 @@ test("old layout: an .envrc with another line keeps it without the export", () =
   try {
     oldLayout(t, `export FOO=1\n${LINK}\n`);
     t.run(); t.run();
-    assert.equal(t.read("Projects/dogchef/.envrc"), "export FOO=1\n");
+    assert.equal(t.read("projects/dogchef/.envrc"), "export FOO=1\n");
   } finally { t.done(); }
 });
 

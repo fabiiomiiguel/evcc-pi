@@ -15,7 +15,7 @@ function setup() {
   mkdirSync(join(home, "bin"));
   writeFileSync(join(home, "bin/lxc"), '#!/bin/sh\necho "lxc $*"\n', { mode: 0o755 });
   for (const n of ["devbox", "dogchefbox", "other"]) symlinkSync(box, join(home, "bin", n));
-  mkdirSync(join(home, "Projects/dogchef/dev"), { recursive: true });
+  mkdirSync(join(home, "projects/dogchef/dev"), { recursive: true });
   mkdirSync(join(home, "plain"));
   const dogRepo = join(home, "wt");
   mkdirSync(dogRepo);
@@ -36,10 +36,10 @@ test("devbox runs in `personal` from a non-dogchef folder, same cwd", () => {
   } finally { t.done(); }
 });
 
-test("dogchefbox runs in `dev` from ~/Projects/dogchef and from a dogchef-be worktree", () => {
+test("dogchefbox runs in `dev` from ~/projects/dogchef and from a dogchef-be worktree", () => {
   const t = setup();
   try {
-    for (const cwd of [join(t.home, "Projects/dogchef/dev"), t.dogRepo]) {
+    for (const cwd of [join(t.home, "projects/dogchef/dev"), t.dogRepo]) {
       const r = t.run("dogchefbox", cwd, "true");
       assert.equal(r.status, 0, r.stderr);
       assert.match(r.stdout, new RegExp(`^lxc exec dev --cwd ${cwd} `));
@@ -50,7 +50,7 @@ test("dogchefbox runs in `dev` from ~/Projects/dogchef and from a dogchef-be wor
 test("devbox in a dogchef folder exits 2 naming dogchefbox, and never calls lxc", () => {
   const t = setup();
   try {
-    for (const cwd of [join(t.home, "Projects/dogchef/dev"), t.dogRepo]) {
+    for (const cwd of [join(t.home, "projects/dogchef/dev"), t.dogRepo]) {
       const r = t.run("devbox", cwd, "true");
       assert.equal(r.status, 2);
       assert.match(r.stderr, /use dogchefbox/);

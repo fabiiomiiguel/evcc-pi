@@ -7,8 +7,8 @@
 # Probed 2026-10-23: on this host ufw is active (input and forward default DROP), so TCP/UDP from the bridge to the
 # host (Pi-hole :53, DHCP) and forwarded to the internet are dropped while ICMP passes. The connectivity check below
 # stops with the commands that show the ufw rules (needs sudo) until two ufw rules exist (the user applies them):
-#   sudo ufw route allow in on lxdpersonal0 out on br0
-#   sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53
+#   sudo ufw route allow in on lxdpersonal0 out on br0 from 10.250.50.0/24 comment 'LXD personal -> internet (LAN/tailnet blocked by LXD ACL)'
+#   sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53 comment 'LXD personal -> Pi-hole DNS'
 # The ACL below is the only block for the LAN and the tailnet (the earlier ufw LAN route-deny was deleted once it was confirmed live).
 # ufw cannot stop the container reaching the tailnet: tailscale's ts-forward chain, jumped before ufw in FORWARD, accepts
 # everything out of tailscale0. So the bridge carries an LXD network ACL (nftables driver, no sudo) that drops egress to the
@@ -39,20 +39,19 @@ add_device() { # name, then device args
 }
 in_box() { lxc exec "$INST" -- "$@"; }
 
-# `personal` gets no dogchef files: one disk per non-dogchef ~/Projects child and per ~/orca/workspaces child whose
+# `personal` gets no dogchef files: one disk per non-dogchef ~/projects child and per ~/orca/workspaces child whose
 # worktrees are not dogchef (an empty workspace counts as personal). Devices named m-* are this script's; a re-run adds
 # new dirs and removes stale ones (and the old whole-tree `projects`/`orca` disks), so re-run it after creating an Orca workspace.
-[[ -d $HOME/Projects ]] || { echo "missing $HOME/Projects (mounted into $INST)" >&2; exit 1; }
+[[ -d $PROJECTS_DIR ]] || { echo "missing $PROJECTS_DIR (mounted into $INST)" >&2; exit 1; }
 shopt -s nullglob
 declare -A WANT=()
-for d in "$HOME"/Projects/*/; do
+for d in "$PROJECTS_DIR"/*/; do
   d=${d%/}
   is_business_dir "$d" || WANT["m-p-${d##*/}"]=$d
 done
 for w in "$HOME"/orca/workspaces/*/; do
-  w=${w%/}; business=
-  for c in "$w"/*/; do is_business_dir "${c%/}" && business=1; done
-  [[ $business ]] || WANT["m-o-${w##*/}"]=$w
+  w=${w%/}
+  business_workspace "$w" || WANT["m-o-${w##*/}"]=$w
 done
 
 lxc network show "$NET" >/dev/null 2>&1 ||
@@ -113,7 +112,7 @@ for dev in $(lxc config device list "$INST" | grep -x 'projects\|orca\|m-.*'); d
 done
 for dev in "${!WANT[@]}"; do add_device "$dev" disk source="${WANT[$dev]}" path="${WANT[$dev]}" shift=true; done
 # LXD creates the parents of the mounts as root with mode 000, which locks the user out of the mounts below.
-in_box install -d -o "$USER_NAME" -g "$USER_NAME" -m 755 "$HOME/Projects" "$HOME/orca" "$HOME/orca/workspaces"
+in_box install -d -o "$USER_NAME" -g "$USER_NAME" -m 755 "$PROJECTS_DIR" "$HOME/orca" "$HOME/orca/workspaces"
 
 for p in $PORTS; do add_device "p$p" proxy listen="tcp:127.0.0.1:$p" connect="tcp:127.0.0.1:$p"; done
 # 3000 is the host's stellantis-worker, so the in-container 3000 (client-files app, football-fines frontend) is 3100 outside

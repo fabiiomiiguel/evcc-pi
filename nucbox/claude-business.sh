@@ -7,7 +7,8 @@ set -euo pipefail
 say() { echo "==> $*"; }
 CLAUDE_HOME=${CLAUDE_HOME:-$HOME/.claude}
 BUSINESS_DIR=${BUSINESS_DIR:-$HOME/.claude-business}
-DOGCHEF_DIR=${DOGCHEF_DIR:-$HOME/Projects/dogchef}
+PROJECTS_DIR=${PROJECTS_DIR:-$HOME/projects}
+DOGCHEF_DIR=${DOGCHEF_DIR:-$PROJECTS_DIR/dogchef}
 BASHRC=${BASHRC:-$HOME/.bashrc}
 PROFILE=${PROFILE:-$HOME/.profile}
 WRAP_DIR=${WRAP_DIR:-$HOME/.local/claude-wrap}
@@ -73,9 +74,9 @@ fi
 cat <<MSG
 
 Next: open a new shell (or exec bash), then
-  cd ~/Projects/dogchef/dev && claude
+  cd ~/projects/dogchef/dev && claude
   /login   (business account), then /status to confirm
 For Orca (its agents do not read ~/.bashrc), re-render the unit and restart it, which ends running agents:
-  bash ~/Projects/personal/evcc-pi/nucbox/install-orca.sh && systemctl --user restart orca.service
+  bash ~/projects/personal/evcc-pi/nucbox/install-orca.sh && systemctl --user restart orca.service
 MSG
 if command -v direnv >/dev/null; then echo "direnv is no longer used; optional: sudo apt remove direnv"; fi

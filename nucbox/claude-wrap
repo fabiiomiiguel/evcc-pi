@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Picks the Claude account by where it runs: dogchef repos (origin in dogchef-be/, any worktree location) and
-# ~/Projects/dogchef use ~/.claude-business; the rest keeps the default ~/.claude. A preset CLAUDE_CONFIG_DIR wins.
+# ~/projects/dogchef use ~/.claude-business; the rest keeps the default ~/.claude. A preset CLAUDE_CONFIG_DIR wins.
 # Installed as ~/.local/claude-wrap/claude by claude-business.sh; execs the real binary by absolute path.
 # With CLAUDE_WRAP_HOOK=1 it is the UserPromptSubmit hook instead: it reads the hook JSON on stdin and exits 2
 # when the session's account is not the one this rule gives its cwd, else 0; any problem exits 0 (fail open).
