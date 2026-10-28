@@ -428,11 +428,11 @@ session and the Orca app, open a plain terminal (ssh or tty, not Orca, not Claud
 `bash nucbox/rename-projects.sh --dry-run --slot <tree>...` first (prints every action, changes nothing), then without `--dry-run`.
 `--slot <worktree>` (repeatable) names the dev worktrees whose `dev-apps` replica is recreated after the restart, `--no-slots` says
 none. The window takes the dev stack and both containers down for about half an hour. Steps, each verified, the first failure stops
-with its rollback: stop Orca; back up to `~/backup-projects-rename-<date>` (json, histories, wrapper dir, Orca DB, `lxc config show`,
-git links before-state); stop the stack and containers; `mv` + the compat symlink `~/Projects -> projects`; rewrite the git worktree
+with its rollback: stop Orca; back up to `~/backup-projects-rename` (a fixed name: a re-run on another day reuses it; json, histories, wrapper dir, Orca DB, `lxc config show`,
+git links before-state, docker volumes and their mounts, open factory `task.md` files); stop the stack and containers; `mv` + the compat symlink `~/Projects -> projects`; rewrite the git worktree
 links; Claude state (project dirs, json paths, history `project` fields); install box and wrapper; LXD disks (`dev` dogchef only, `personal`
-the rest); restart, `dogchefbox make start` and the slots (named volumes kept); the `~/.claude/CLAUDE.md` block from
-`claude-devbox.md`; handoffs `devbox` -> `dogchefbox`; `devbox` -> box; the Orca registry (payload and its sha256 `content_hash`).
+the rest); restart, `dogchefbox make start` and the slots (named volumes kept and checked: the same containers must mount the same volumes); the `~/.claude/CLAUDE.md` block from
+`claude-devbox.md`; handoffs `devbox` -> `dogchefbox`; the `Folder:` line of open factory records under `~/.factory/tasks`; `devbox` -> box; the Orca registry (payload and its sha256 `content_hash`).
 A re-run continues where it stopped.
 
 Whole rollback: stop sessions, Orca and containers; `rm ~/Projects && mv ~/projects ~/Projects`; restore the files from the backup

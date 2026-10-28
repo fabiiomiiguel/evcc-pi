@@ -21,7 +21,9 @@ case "$1" in
   info) [[ -e $s/state-$2 ]] ;;
   start) [[ ! -e $s/fail-start ]] || { echo "start failed" >&2; exit 1; }; echo RUNNING > "$s/state-$2" ;;
   stop) echo STOPPED > "$s/state-$2" ;;
-  exec) case "$*" in *"volume ls"*) cat "$s/volumes" ;; *"docker inspect"*) cat "$s/mounts" ;; esac ;;
+  exec) case "$*" in *"volume ls"*) cat "$s/volumes" ;;
+    *Destination*) if grep -q "make start" "$s/calls"; then cat "$s/volmounts-after"; else cat "$s/volmounts"; fi ;;
+    *"docker inspect"*) cat "$s/mounts" ;; esac ;;
   config) case "$2" in
     show) echo "config of $3" ;;
     device) case "$3" in
@@ -56,6 +58,8 @@ function setup() {
   for (const f of ["lxc", "personal-script", "systemctl", "pgrep"]) spawnSync("chmod", ["+x", join(home, "bin", f)]);
   for (const i of ["dev", "personal"]) writeFileSync(join(state, `state-${i}`), "RUNNING\n");
   writeFileSync(join(state, "volumes"), "dev_mysql\n");
+  writeFileSync(join(state, "volmounts"), "/dev-mysql dev_mysql:/var/lib/mysql \n/dev-apps-sup-1 node_modules:/app/node_modules \n");
+  writeFileSync(join(state, "volmounts-after"), "/dev-mysql dev_mysql:/var/lib/mysql \n");
   writeFileSync(join(state, "mounts"), `${home}/projects/dogchef/dev/apps \n`);
   for (const [n, src] of [["dev-projects", O], ["dev-orca", `${home}/orca`], ["dev-m-p-dogchef", `${O}/dogchef`], ["personal-m-p-personal", `${O}/personal`], ["personal-m-o-factory", `${home}/orca/workspaces/factory`]])
     writeFileSync(join(state, `d-${n}`), `source: ${src}\n`);
@@ -85,6 +89,10 @@ function setup() {
   w(".claude-business/history.jsonl", hist(`${O}/dogchef/dev`, 3));
   w(".claude/CLAUDE.md", "# graphify\nkeep\n\n# dogchef-be repos run inside the `dev` LXD container\nold ~/Projects text\nnever use devbox for them.\n\n# No Claude attribution\nkeep too\n");
   w("Projects/dogchef/handoffs/dev.md", "run devbox make start in ~/Projects/dogchef/dev\n");
+  w("Projects/dogchef/handoffs/odd.md", `see \`${O}/dogchef\` and (${O}/ffv0) and $HOME/Projects/oss, ~/Projects.\nLinear Projects stay; ${O}/dogchef/x.md\n`);
+  mk(".factory/tasks/p/u1/r-open"); mk(".factory/tasks/p/u1/r-done");
+  w(".factory/tasks/p/u1/r-open/task.md", `# T\nFolder: ${O}/personal/evcc-pi (read only)\nStatus: fix\nContext: ${O}/personal/evcc-pi stays\n`);
+  w(".factory/tasks/p/u1/r-done/task.md", `Folder: ${O}/personal/evcc-pi\nStatus: done\n`);
 
   // Orca registry: one row names the old path, content_hash is the sha256 of the payload
   const db = join(home, ".config/orca/profiles/local-default/profile-state.db");
@@ -109,12 +117,15 @@ test("dry-run prints the steps and changes nothing", () => {
   try {
     const r = t.run(["--dry-run", "--no-slots"]);
     assert.equal(r.status, 0, r.stderr);
-    for (const s of ["[1] stop Orca", "[3] stop the dev stack", "[4] mv", "[13] Orca registry"]) assert.ok(r.stdout.includes(s), s);
+    for (const s of ["[1] stop Orca", "[3] stop the dev stack", "[4] mv", "[14] Orca registry"]) assert.ok(r.stdout.includes(s), s);
     assert.match(r.stdout, /\+ mv .*Projects .*projects/);
     assert.ok(lstatSync(t.O).isDirectory() && !lstatSync(t.O).isSymbolicLink());
-    assert.ok(!existsSync(join(t.home, "projects")) && !existsSync(join(t.home, "backup-projects-rename-" + new Date().toISOString().slice(0, 10))));
+    assert.ok(!existsSync(join(t.home, "projects")) && !existsSync(join(t.home, "backup-projects-rename")));
     assert.deepEqual(t.calls().filter((l) => /^(stop|start|config device (add|remove)|exec)|systemctl --user (stop|start)/.test(l)), []);
     assert.match(t.read(".claude/settings.json"), /Projects/);
+    assert.match(r.stdout, /dev\.md:1:run devbox make start/, "dry-run shows the handoff lines it would change");
+    assert.match(r.stdout, /task\.md:2:Folder: .*evc?c-pi/, "and the task folders");
+    assert.match(r.stdout, /cloud-init status/, "and the cloud-init wait");
   } finally { t.done(); }
 });
 
@@ -126,7 +137,7 @@ test("a live run does every step, and a second run changes nothing", () => {
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const N = join(t.home, "projects");
     assert.ok(lstatSync(N).isDirectory() && lstatSync(t.O).isSymbolicLink() && readlinkSync(t.O) === "projects");
-    assert.ok(existsSync(join(t.home, "backup-projects-rename-" + new Date().toISOString().slice(0, 10), ".done")));
+    assert.ok(existsSync(join(t.home, "backup-projects-rename", ".done")));
 
     // git: the linked worktree and the main repo agree on the new path
     const wt = join(t.home, "orca/workspaces/factory/wt");
@@ -166,6 +177,11 @@ test("a live run does every step, and a second run changes nothing", () => {
     assert.match(md, /\n\n# No Claude attribution\nkeep too\n$/);
     assert.doesNotMatch(md, /Projects|never use devbox/);
     assert.equal(t.read("projects/dogchef/handoffs/dev.md"), "run dogchefbox make start in ~/projects/dogchef/dev\n");
+    assert.equal(t.read("projects/dogchef/handoffs/odd.md"), `see \`${N}/dogchef\` and (${N}/ffv0) and $HOME/projects/oss, ~/projects.\nLinear Projects stay; ${N}/dogchef/x.md\n`);
+    assert.equal(t.read(".factory/tasks/p/u1/r-open/task.md"), `# T\nFolder: ${N}/personal/evcc-pi (read only)\nStatus: fix\nContext: ${t.O}/personal/evcc-pi stays\n`);
+    assert.match(t.read(".factory/tasks/p/u1/r-done/task.md"), /Projects/, "a done record is left alone");
+    assert.match(readFileSync(join(t.home, "backup-projects-rename", t.home, ".factory/tasks/p/u1/r-open/task.md"), "utf8"), /Folder: .*Projects/);
+    assert.match(readFileSync(join(t.home, "backup-projects-rename/volmounts-before.txt"), "utf8"), /dev_mysql:\/var\/lib\/mysql/);
     assert.equal(readlinkSync(join(t.home, ".local/bin/devbox")), join(t.home, ".local/claude-wrap/box"));
     const rows = spawnSync("python3", ["-I", "-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select payload,content_hash from profile_state_documents where domain=\"repos\"').fetchone())", t.db], { encoding: "utf8" }).stdout;
     const payload = `{"path":"${N}/personal/evcc-pi"}`;
@@ -222,5 +238,65 @@ test("the first failure stops the run with its rollback and leaves the later ste
     const r2 = t.run(["--no-slots"]);
     assert.equal(r2.status, 0, r2.stdout + r2.stderr);
     assert.ok(lstatSync(join(t.home, ".local/bin/devbox")).isSymbolicLink());
+  } finally { t.done(); }
+});
+
+test("a re-run on another day keeps the first backup, the before-state included", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "fail-start"), "");
+    assert.notEqual(t.run(["--no-slots"]).status, 0);
+    const bk = join(t.home, "backup-projects-rename");
+    const before = readFileSync(join(bk, "git-links.tsv"), "utf8");
+    assert.match(before, /Projects/);
+    rmSync(join(t.state, "fail-start"));
+    mkdirSync(join(t.home, "bin2"));
+    writeFileSync(join(t.home, "bin2/date"), "#!/bin/sh\necho 2099-01-01\n", { mode: 0o755 });
+    const r = t.run(["--no-slots"], { PATH: `${join(t.home, "bin2")}:${join(t.home, ".local/bin")}:${join(t.home, "bin")}:${process.env.PATH}` });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(readFileSync(join(bk, "git-links.tsv"), "utf8"), before);
+    assert.equal(sh(`ls -d ${t.home}/backup-projects-rename*`).stdout.trim(), bk);
+  } finally { t.done(); }
+});
+
+test("no backup is taken once the old path is already a symlink and no backup is complete", () => {
+  const t = setup();
+  try {
+    sh(`mv ${t.O} ${t.home}/projects && ln -s projects ${t.O}`);
+    const r = t.run(["--no-slots"]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /no complete backup/);
+  } finally { t.done(); }
+});
+
+test("a docker volume that is not mounted again stops the run at the recreate step", () => {
+  const t = setup();
+  try {
+    writeFileSync(join(t.state, "volmounts-after"), "/dev-mysql dev_mysql_new:/var/lib/mysql \n");
+    const r = t.run(["--no-slots"]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /FAILED at step \[\d+\] recreate the dev stack/);
+    assert.match(r.stderr, /verify FAILED: .*same volumes/);
+  } finally { t.done(); }
+});
+
+test("a duplicate key after the path rewrite restores the file and prints the rollback", () => {
+  const t = setup();
+  try {
+    const n = join(t.home, "projects");
+    const orig = JSON.stringify({ projects: { [`${t.O}/dogchef`]: {}, [`${n}/dogchef`]: {} } });
+    writeFileSync(join(t.home, ".claude-business/.claude.json"), orig.replace(/^/, ""));
+    const r = t.run(["--no-slots"]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /duplicate/); assert.match(r.stderr, /Rollback for this step: restore/);
+    assert.equal(t.read(".claude-business/.claude.json"), orig);
+  } finally { t.done(); }
+});
+
+test("only the symlink is made when a failed run left projects without it", () => {
+  const t = setup();
+  try {
+    const bk = join(t.home, "bk"); mkdirSync(bk); writeFileSync(join(bk, ".done"), ""); writeFileSync(join(bk, "git-health.txt"), "prunable=0 broken=0\n"); writeFileSync(join(bk, "volmounts-before.txt"), "");
+    sh(`mv ${t.O} ${t.home}/projects`);
+    const r = t.run(["--no-slots"], { BACKUP_DIR: bk });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(readlinkSync(t.O), "projects");
   } finally { t.done(); }
 });

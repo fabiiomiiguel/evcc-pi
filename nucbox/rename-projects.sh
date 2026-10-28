@@ -6,10 +6,10 @@
 #   bash ~/Projects/personal/evcc-pi/nucbox/rename-projects.sh --slot <tree>...             # the window
 # --slot <tree>  a dev worktree whose dev-apps replica is recreated after the restart (repeatable; old or new path);
 #                --no-slots says there are none. One of them is required, so a forgotten slot is a decision, not an accident.
-# Steps: stop Orca, back up (~/backup-projects-rename-<date>, skipped once its .done exists), stop the dev stack and both
+# Steps: stop Orca, back up (~/backup-projects-rename, skipped once its .done exists), stop the dev stack and both
 # containers, mv + compat symlink ~/Projects -> projects, git worktree links, Claude state (project dirs, json paths, history
 # project fields), install box/wrapper, LXD disks of dev and personal, restart + docker recreate + slots, CLAUDE.md block,
-# handoffs, devbox -> box, Orca registry, start Orca. Each step is verified; the first failure stops the run with the
+# handoffs, factory task folders, devbox -> box, Orca registry, start Orca. Each step is verified; the first failure stops the run with the
 # rollback for that step. A re-run continues: done steps detect their state and skip. Live runs refuse to start from inside
 # ~/Projects, from a Claude or Orca process, or while a claude process runs; a dry-run only says it would.
 # Test seams: BACKUP_DIR, RENAME_PERSONAL_SCRIPT, PROC_DIR and RENAME_START_PID (the ancestor check).
@@ -17,7 +17,7 @@ set -eEuo pipefail
 
 OLD=$HOME/Projects
 NEW=$HOME/projects
-BK=${BACKUP_DIR:-$HOME/backup-projects-rename-$(date +%F)}
+BK=${BACKUP_DIR:-$HOME/backup-projects-rename}
 PROC=${PROC_DIR:-/proc}
 WRAP=$HOME/.local/claude-wrap
 SELF=$(realpath "$0")
@@ -28,9 +28,14 @@ JSON_FILES=("$HOME/.claude.json" "$HOME/.claude-business/.claude.json" "$HOME/.c
   "$HOME/.claude/plugins/known_marketplaces.json" "$HOME/.claude/plugins/installed_plugins.json")
 ORCA_DB=$HOME/.config/orca/profiles/local-default/profile-state.db
 HANDOFFS=dogchef/handoffs
+TASKS=$HOME/.factory/tasks
 
 say() { echo "==> $*"; }
-die() { echo "rename-projects: $*" >&2; exit 1; }
+die() {
+  echo "rename-projects: $*" >&2
+  if ((STEP > 0)); then echo "Rollback for this step: $RB" >&2; fi
+  exit 1
+}
 usage() { sed -n '2,/^set -e/p' "$SELF" | sed '$d;s/^# \{0,1\}//'; }
 run() { if ((DRY)); then echo "+ $*"; else "$@"; fi; }
 # verify <what> <command...>: in a dry-run only names the check
@@ -56,7 +61,15 @@ ere() { sed 's/[][\.*^$+?(){}|#]/\\&/g' <<<"$1"; }
 OLD_RE=$(ere "$OLD")
 # every OLD path in a file -> NEW, whole path components only, symlinks kept (--follow-symlinks)
 sed_paths() { sed -i --follow-symlinks -E "s#$OLD_RE([/\"]|\$)#$NEW\\1#g" "$@"; }
-json_ok() { python3 -I -c 'import json,sys; json.load(open(sys.argv[1]))' "$1"; }
+# valid json without a duplicate key (python keeps the last one silently)
+json_ok() {
+  python3 -I -c '
+import json, sys
+def no_dupes(pairs):
+    if len({k for k, _ in pairs}) != len(pairs): raise SystemExit(1)
+    return dict(pairs)
+json.load(open(sys.argv[1]), object_pairs_hook=no_dupes)' "$1"
+}
 lxc_state() { lxc list "^$1\$" -f csv -c s 2>/dev/null || true; }
 has_instance() { lxc info "$1" >/dev/null 2>&1; }
 proj_root() { if [[ -d $NEW && ! -L $NEW ]]; then echo "$NEW"; else echo "$OLD"; fi; }
@@ -119,6 +132,7 @@ preflight() {
   local s
   for s in "${SLOTS[@]}"; do [[ -d $s || -d $(newpath "$s") ]] || die "slot $s does not exist"; done
   [[ -f $(repo_dir)/nucbox/box || ${DRY} == 1 ]] || die "$(repo_dir)/nucbox/box missing"
+  [[ -s $(dirname "$SELF")/claude-devbox.md ]] || die "$(dirname "$SELF")/claude-devbox.md is missing or empty"
   guards
 }
 
@@ -130,9 +144,22 @@ stop_orca() {
   verify "no Orca process left (quit the Orca app if it is still open)" bash -c '! pgrep -f /opt/Orca/ >/dev/null'
 }
 
+# "<container> <volume>:<destination> ..." per running container; the slot replicas (dev-apps-<slug>) are recreated by slot.sh
+volume_mounts() {
+  (cd "$1" && dogchefbox bash -c 'docker ps -q | xargs -r docker inspect --format "{{.Name}} {{range .Mounts}}{{if .Name}}{{.Name}}:{{.Destination}} {{end}}{{end}}"') | grep -v '^/dev-apps-' | sort
+}
+# the factory records still open (no Status, or one not starting with done) whose Folder: line names the old path
+open_task_files() {
+  local f
+  while IFS= read -r f; do
+    grep -qE "^Folder:.*$OLD_RE([^A-Za-z0-9_.-]|\$)" "$f" && ! grep -qE '^Status:[[:space:]]*done' "$f" && echo "$f"
+  done < <(find "$TASKS" -name task.md 2>/dev/null) || true
+}
+
 backup() {
   step "back up to $BK" "nothing changed yet; delete $BK if it is partial"
   if [[ -e $BK/.done ]]; then say "backup already complete ($BK/.done)"; return; fi
+  if [[ -L $OLD || -d $NEW ]]; then die "$OLD is renamed already but no complete backup exists in $BK: a backup now would hold the after-state; restore the before-state from the first run's backup or finish by hand"; fi
   run mkdir -p "$BK"
   local f
   for f in "${JSON_FILES[@]}" "${CLAUDE_STATE[@]/%//history.jsonl}" "$HOME/.claude/CLAUDE.md" "$HOME/.local/bin/devbox" "$ORCA_DB" "$ORCA_DB-wal" "$ORCA_DB-shm"; do
@@ -140,23 +167,27 @@ backup() {
   done
   [[ -d $WRAP ]] && run cp -a --parents "$WRAP" "$BK/"
   [[ -d $OLD/$HANDOFFS ]] && run cp -a --parents "$OLD/$HANDOFFS" "$BK/"
+  for f in $(open_task_files); do run cp -a --parents "$f" "$BK/"; done
   local i
   for i in dev personal; do
     has_instance "$i" && { if ((DRY)); then echo "+ lxc config show $i > $BK/lxc-$i.txt"; else lxc config show "$i" > "$BK/lxc-$i.txt"; fi; }
   done
-  if ((DRY)); then echo "+ record git link before-state, git health and docker volumes in $BK"; else
+  if ((DRY)); then echo "+ record git link before-state, git health, docker volumes and their mounts in $BK"; else
     local l
     while IFS= read -r l; do printf '%s\t%s\n' "$l" "$(<"$l")"; done < <(git_links "$OLD" "$HOME/orca/workspaces") > "$BK/git-links.tsv"
     git_health > "$BK/git-health.txt"
+    : > "$BK/volumes-before.txt"; : > "$BK/volmounts-before.txt"
     if [[ $(lxc_state dev) == RUNNING && -d $OLD/dogchef/dev ]]; then
       (cd "$OLD/dogchef/dev" && dogchefbox docker volume ls -q | sort) > "$BK/volumes-before.txt"
-    else : > "$BK/volumes-before.txt"; fi
+      volume_mounts "$OLD/dogchef/dev" > "$BK/volmounts-before.txt"
+    fi
   fi
   run touch "$BK/.done"
   verify "backup marker present" test -e "$BK/.done"
 }
 
 stop_stack() {
+  # slot.sh down-all is docker rm -f of the dev-apps-* containers and make stop is docker compose stop per service: no volume is removed
   step "stop the dev stack and both containers" "lxc start dev personal; then re-run this script"
   if [[ $(lxc_state dev) == RUNNING && -d $(proj_root)/dogchef/dev ]]; then
     (cd "$(proj_root)/dogchef/dev" && run dogchefbox bash .claude/scripts/slot.sh down-all && run dogchefbox make stop)
@@ -167,8 +198,10 @@ stop_stack() {
 }
 
 rename_dir() {
-  step "mv $OLD $NEW and leave the compat symlink" "rm $OLD && mv $NEW $OLD"
-  if [[ -d $NEW && -L $OLD ]]; then say "already renamed"; else
+  step "mv $OLD $NEW and leave the compat symlink" "rm -f $OLD; mv $NEW $OLD"
+  if [[ -d $NEW && -L $OLD ]]; then say "already renamed"
+  elif [[ -d $NEW && ! -e $OLD && ! -L $OLD ]]; then run ln -s projects "$OLD"
+  else
     run mv "$OLD" "$NEW"
     run ln -s projects "$OLD"
   fi
@@ -202,7 +235,7 @@ claude_state() {
     [[ -f $f ]] && grep -q "$OLD" "$f" || continue
     if ((DRY)); then echo "+ sed_paths $f"; else
       sed_paths "$f"
-      json_ok "$f" || { cp -a "$BK$f" "$f"; die "$f is not valid json after the rewrite; restored it from the backup"; }
+      json_ok "$f" || { cp -a "$BK$f" "$f"; die "$f is not valid json or has a duplicate key after the rewrite (a lowercase key existed already?); restored it from the backup"; }
     fi
   done
   for acct in "${CLAUDE_STATE[@]}"; do
@@ -241,7 +274,7 @@ lxd_mounts() {
     drop_old_disks dev
     run bash "$r/nucbox/lxd-dev-mounts.sh"
     run lxc start dev
-    run lxc exec dev -- cloud-init status --wait >/dev/null || true
+    run lxc exec dev -- cloud-init status --wait || true
     run lxc exec dev -- install -d -o fabio -g fabio -m 755 "$NEW" "$HOME/orca" "$HOME/orca/workspaces"
     verify "dev devices name no $OLD" bash -c '! lxc config device show dev | grep -qF "$1"' _ "$OLD"
   else say "no instance dev: skipped"; fi
@@ -251,6 +284,8 @@ lxd_mounts() {
     verify "personal devices name no $OLD" bash -c '! lxc config device show personal | grep -qF "$1"' _ "$OLD"
   else say "no instance personal: skipped (create it with nucbox/lxd-personal.sh)"; fi
 }
+
+mounts_kept() { [[ -z $(comm -23 "$BK/volmounts-before.txt" <(volume_mounts "$1")) ]]; }
 
 docker_recreate() {
   step "recreate the dev stack and the slots from the new path" "cd $NEW/dogchef/dev && dogchefbox make start (the volumes are kept)"
@@ -262,6 +297,7 @@ docker_recreate() {
     ! (cd "$2" && dogchefbox bash -c "docker ps -q | xargs -r docker inspect --format \"{{range .Mounts}}{{.Source}} {{end}}\"") | grep -qF "$1"' _ "$OLD" "$dev"
   verify "every docker volume from before still exists" bash -c '
     [[ -z $(comm -23 "$1" <(cd "$2" && dogchefbox docker volume ls -q | sort)) ]]' _ "$BK/volumes-before.txt" "$dev"
+  verify "the same containers mount the same volumes as before (same volumes)" mounts_kept "$dev"
 }
 
 claude_md_block() {
@@ -279,13 +315,25 @@ claude_md_block() {
     grep -q "^# Two LXD containers" "$1" && ! grep -qE "~/Projects|never use devbox" "$1"' _ "$md"
 }
 
+# one pattern for the rewrite, the dry-run listing and the check: the old home path, ~ or $HOME before /Projects, then a boundary
+HP_RE="($(ere "$HOME")|~|\\\$HOME|\\\$\\{HOME\\})/Projects([^A-Za-z0-9_.-]|\.?\$|\.[^A-Za-z0-9_-])"
 handoffs() {
   step "dogchef handoffs: devbox -> dogchefbox, old path -> new" "cp -a the saved $BK$OLD/$HANDOFFS back"
-  local dir=$NEW/$HANDOFFS
-  if [[ -d $dir ]]; then
-    run sed -i -E "s/\\bdevbox\\b/dogchefbox/g; s#~/Projects#~/projects#g; s#$OLD_RE([/\"]|\$)#$NEW\\1#g" "$dir"/*.md
-    verify "handoffs say neither devbox nor the old path" bash -c '! grep -qE "\bdevbox\b|Projects" "$1"/*.md' _ "$dir"
-  else say "no $dir: skipped"; fi
+  local dir; dir=$(proj_root)/$HANDOFFS
+  local files=("$dir"/*.md)
+  if [[ ! -e ${files[0]} ]]; then say "no handoffs in $dir: skipped"; return; fi
+  if ((DRY)); then echo "+ lines that change in $dir:"; grep -nE "\bdevbox\b|$HP_RE" "${files[@]}" || true; return; fi
+  sed -i -E "s/\bdevbox\b/dogchefbox/g; s#$HP_RE#\1/projects\2#g" "${files[@]}"
+  verify "handoffs say neither devbox nor the old path" bash -c '! grep -qE "\bdevbox\b|$1" "${@:2}"' _ "$HP_RE" "${files[@]}"
+}
+
+task_folders() {
+  step "factory task folders: Folder: lines of open records" "cp -a $BK$TASKS/. $TASKS/"
+  local files; files=$(open_task_files)
+  if [[ -z $files ]]; then say "no open record names $OLD"; return; fi
+  if ((DRY)); then echo "+ Folder: lines that change:"; xargs -d '\n' grep -Hnm1 '^Folder:' <<<"$files"; return; fi
+  xargs -d '\n' sed -i -E "/^Folder:/s#$OLD_RE([^A-Za-z0-9_.-]|\$)#$NEW\1#" <<<"$files"
+  verify "no open record's Folder: line names $OLD" test -z "$(open_task_files)"
 }
 
 devbox_link() {
@@ -299,7 +347,7 @@ devbox_link() {
 
 orca_registry() {
   step "Orca registry: paths and content hashes" "cp -a $BK$ORCA_DB(-wal,-shm) back over $ORCA_DB, or re-add the repos in the Orca UI"
-  if [[ ! -f $ORCA_DB ]]; then say "no $ORCA_DB: skipped"; return; fi
+  if [[ ! -f $ORCA_DB ]]; then say "no $ORCA_DB: skipped"; run systemctl --user start orca.service; return; fi
   if ((DRY)); then echo "+ python3: replace $OLD by $NEW in profile_state_documents.payload and recompute content_hash (sha256) of the changed rows"; else
     python3 -I - "$ORCA_DB" "$OLD" "$NEW" <<'PY'
 import hashlib, sqlite3, sys
@@ -340,13 +388,14 @@ main() {
   preflight
   ((DRY)) && say "dry-run: nothing below is executed"
   stop_orca; backup; stop_stack; rename_dir; fix_git; claude_state; deploy_scripts; lxd_mounts
-  docker_recreate; claude_md_block; handoffs; devbox_link; orca_registry
+  docker_recreate; claude_md_block; handoffs; task_folders; devbox_link; orca_registry
   cat <<MSG
 
 Done. By hand now:
   - dogchef/handoffs/dulse.md:7 still says ~/orca is not mounted in dev: it is, for the dogchef workspaces; reword it.
   - open a fresh claude in ~/projects/personal/evcc-pi (memory loads, /resume lists the old sessions) and one in ~/projects/dogchef/dev (business account).
   - start the Orca app; the repos should be listed and a worktree should open.
+  - git worktrees under $NEW/.cache (skipped by the link rewrite) keep their old .git links: fix or delete them before the symlink goes.
   - $OLD is only a compat symlink: after a week, with nothing naming it, 'rm $OLD' (a symlink; plain rm).
   - $BK keeps the pre-window copies.
 MSG
