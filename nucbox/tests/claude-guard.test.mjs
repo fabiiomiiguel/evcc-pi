@@ -19,8 +19,8 @@ function setup(settings = "{}") {
   execFileSync("git", ["-C", join(home, "wt"), "remote", "add", "origin", "git@github.com:dogchef-be/dev.git"]);
   mkdirSync(join(home, ".local/bin"), { recursive: true });
   writeFileSync(join(home, ".local/bin/claude"), `#!/bin/sh\ntouch "${home}/real-ran"\n`, { mode: 0o755 });
-  const env = { ...process.env, HOME: home };
-  for (const k of ["CLAUDE_WRAP_GUARD", "CLAUDE_WRAP_HOOK", "CLAUDE_WRAP_BYPASS", "CLAUDE_CONFIG_DIR"]) delete env[k];
+  const env = { ...process.env, PROJECTS_DIR: undefined, HOME: home };
+  for (const k of ["CLAUDE_WRAP_GUARD", "CLAUDE_WRAP_HOOK", "CLAUDE_WRAP_BYPASS", "CLAUDE_CONFIG_DIR", "PROJECTS_DIR"]) delete env[k];
   const install = () => execFileSync("bash", [script], { encoding: "utf8", env });
   const guard = (cwd, config, stdin = JSON.stringify({ cwd })) => {
     const e = { ...env, CLAUDE_WRAP_HOOK: "1" };

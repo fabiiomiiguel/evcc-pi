@@ -5,7 +5,7 @@
 # (subnet router, NoSNAT false), so they pass; the rest of the LAN does not. Filtered in prerouting
 # before Docker's DNAT, which an input rule would never see. Safe to run again. No sudo: lxc exec.
 set -euo pipefail
-PROJECTS_DIR=${PROJECTS_DIR:-$HOME/projects}
+. "$(dirname "$0")/is-business-dir.sh"
 DEV_REPO=${DEV_REPO:-$PROJECTS_DIR/dogchef/dev}
 addr() { sed -n 's/.* inet \([0-9.]*\)\/.*/\1/p' | head -n1; }
 DEV_IP=$(lxc exec dev -- ip -4 -o addr show eth0 | addr)

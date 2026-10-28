@@ -23,7 +23,7 @@ function setup() {
   writeFileSync(join(home, ".claude", "CLAUDE.md"), "x");
   writeFileSync(join(home, ".claude", "settings.json"), "{}");
   mkdirSync(join(home, "projects", "dogchef"), { recursive: true });
-  const run = () => execFileSync("bash", [script], { encoding: "utf8", env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` } });
+  const run = () => execFileSync("bash", [script], { encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: home, PATH: `${bin}:${process.env.PATH}` } });
   const read = (p) => readFileSync(join(home, p), "utf8");
   return { home, run, read, done: () => rmSync(home, { recursive: true, force: true }) };
 }

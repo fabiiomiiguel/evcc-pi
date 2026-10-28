@@ -22,7 +22,7 @@ function setup() {
   execFileSync("git", ["-C", dogRepo, "init", "-q"]);
   execFileSync("git", ["-C", dogRepo, "remote", "add", "origin", "git@github.com:dogchef-be/dev.git"]);
   const run = (name, cwd, ...args) =>
-    spawnSync(join(home, "bin", name), args, { cwd, encoding: "utf8", env: { ...process.env, HOME: home, PATH: `${join(home, "bin")}:${process.env.PATH}` } });
+    spawnSync(join(home, "bin", name), args, { cwd, encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: home, PATH: `${join(home, "bin")}:${process.env.PATH}` } });
   return { home, dogRepo, run, done: () => rmSync(home, { recursive: true, force: true }) };
 }
 
@@ -81,7 +81,7 @@ test("an unknown basename exits 64", () => {
 test("the instance names can be overridden by env", () => {
   const t = setup();
   try {
-    const r = spawnSync(join(t.home, "bin/devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}`, DEVBOX_INSTANCE: "x" } });
+    const r = spawnSync(join(t.home, "bin/devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}`, DEVBOX_INSTANCE: "x" } });
     assert.match(r.stdout, /^lxc exec x /);
   } finally { t.done(); }
 });
@@ -93,7 +93,7 @@ test("without is-business-dir.sh next to it, it exits 70 and runs nothing", () =
     mkdirSync(dir);
     copyFileSync(box, join(dir, "box"));
     symlinkSync(join(dir, "box"), join(dir, "devbox"));
-    const r = spawnSync(join(dir, "devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}` } });
+    const r = spawnSync(join(dir, "devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}` } });
     assert.equal(r.status, 70);
     assert.equal(r.stdout, "");
     assert.match(r.stderr, /is-business-dir\.sh missing/);

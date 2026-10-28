@@ -61,7 +61,7 @@ function setup() {
   const git = (...a) => spawnSync("git", ["-C", join(home, "orca/workspaces/dev/SUP-1"), ...a]);
   git("init", "-q"); git("remote", "add", "origin", "ssh://git@github.com/dogchef-be/dev.git");
   writeFileSync(join(home, "bin/lxc"), STUB, { mode: 0o755 });
-  const run = () => spawnSync("bash", [script], { encoding: "utf8", env: { ...process.env, HOME: home, STUB_STATE: state, PATH: `${join(home, "bin")}:${process.env.PATH}` } });
+  const run = () => spawnSync("bash", [script], { encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: home, STUB_STATE: state, PATH: `${join(home, "bin")}:${process.env.PATH}` } });
   const calls = () => readFileSync(join(state, "calls"), "utf8").trim().split("\n");
   const reset = () => rmSync(join(state, "calls"), { force: true });
   return { home, state, run, calls, reset, done: () => rmSync(home, { recursive: true, force: true }) };
@@ -214,5 +214,16 @@ test("a re-run adds a new personal dir, removes stale mounts and the old whole-t
     t.reset();
     assert.equal(t.run().status, 0);
     assert.deepEqual(t.calls().filter((l) => /config device (add|remove)/.test(l)), []);
+  } finally { t.done(); }
+});
+
+test("with neither ~/projects nor ~/Projects it stops before any lxc call", () => {
+  const t = setup();
+  try {
+    rmSync(join(t.home, "projects"), { recursive: true });
+    const r = t.run();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /missing .*projects/);
+    assert.equal(existsSync(join(t.state, "calls")), false);
   } finally { t.done(); }
 });

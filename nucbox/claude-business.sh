@@ -7,7 +7,7 @@ set -euo pipefail
 say() { echo "==> $*"; }
 CLAUDE_HOME=${CLAUDE_HOME:-$HOME/.claude}
 BUSINESS_DIR=${BUSINESS_DIR:-$HOME/.claude-business}
-PROJECTS_DIR=${PROJECTS_DIR:-$HOME/projects}
+. "$(dirname "$0")/is-business-dir.sh"
 DOGCHEF_DIR=${DOGCHEF_DIR:-$PROJECTS_DIR/dogchef}
 BASHRC=${BASHRC:-$HOME/.bashrc}
 PROFILE=${PROFILE:-$HOME/.profile}

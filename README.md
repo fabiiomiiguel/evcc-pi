@@ -440,7 +440,7 @@ lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounte
   worktrees are not dogchef (`is-business-dir.sh`; an empty workspace counts as personal). A re-run adds disks for
   new dirs and removes stale `m-*` ones, so **re-run the script after creating an Orca workspace or a projects folder**.
 - Run it from `nucbox/` (`cd ~/projects/personal/evcc-pi/nucbox`).
-- The scripts take the projects folder from `PROJECTS_DIR` (default `~/projects`, set in `is-business-dir.sh`).
+- The scripts take the projects folder from `PROJECTS_DIR` (default `~/projects`, or `~/Projects` while only that exists, i.e. until the rename; set in `is-business-dir.sh`, which `claude-business.sh` and `dev-lan-access.sh` source). `is_business_dir` compares physical paths, so the `~/Projects` compat symlink still counts.
 - Probed on this host: ufw is active (`/etc/default/ufw`: input and forward default DROP), so with no rule for
   `lxdpersonal0` TCP/UDP to the host (Pi-hole `:53`, DHCP) and forwarded to the internet are dropped while ICMP
   passes. The script then stops after creating the container, before provisioning, when it has no TCP egress or
