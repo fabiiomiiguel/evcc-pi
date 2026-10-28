@@ -385,7 +385,7 @@ lxc exec dev -- bash -c 'usermod -l fabio -d /home/fabio -m ubuntu && groupmod -
 nucbox/lxd-dev-mounts.sh            # the dogchef disks, see below
 lxc exec dev -- bash -c 'apt-get install -y docker.io docker-compose-v2 git make curl && usermod -aG docker fabio'
 install -m 755 nucbox/box ~/.local/claude-wrap/box && ln -sfn ~/.local/claude-wrap/box ~/.local/bin/dogchefbox
-# the rule for Claude Code (Orca) is nucbox/claude-devbox.md, kept in ~/.claude/CLAUDE.md
+# the rule for Claude Code (Orca) is nucbox/claude-devbox.md, kept in ~/.claude/CLAUDE.md (rename-projects.sh swaps the old block for it)
 cd ~/projects/dogchef/dev && dogchefbox make setup && dogchefbox make start
 ```
 
@@ -420,6 +420,25 @@ cd ~/projects/dogchef/dev && dogchefbox make setup && dogchefbox make start
 - The `dev` repo's MCP servers run on the host with Claude Code: `uv`, the AWS CLI and the Google Cloud
   SDK live under `~/.local` and `~/google-cloud-sdk` (no sudo), `~/.bashrc` exports
   `GITHUB_PERSONAL_ACCESS_TOKEN` from `gh auth token`, and the AWS/gcloud logins are yours.
+
+### Renaming `~/Projects` to `~/projects` (window script)
+
+`nucbox/rename-projects.sh` is the one-time window: the rename and the devbox/dogchefbox switch-over together. Close every Claude
+session and the Orca app, open a plain terminal (ssh or tty, not Orca, not Claude, cwd outside `~/Projects`) and run
+`bash nucbox/rename-projects.sh --dry-run --slot <tree>...` first (prints every action, changes nothing), then without `--dry-run`.
+`--slot <worktree>` (repeatable) names the dev worktrees whose `dev-apps` replica is recreated after the restart, `--no-slots` says
+none. The window takes the dev stack and both containers down for about half an hour. Steps, each verified, the first failure stops
+with its rollback: stop Orca; back up to `~/backup-projects-rename-<date>` (json, histories, wrapper dir, Orca DB, `lxc config show`,
+git links before-state); stop the stack and containers; `mv` + the compat symlink `~/Projects -> projects`; rewrite the git worktree
+links; Claude state (project dirs, json paths, history `project` fields); install box and wrapper; LXD disks (`dev` dogchef only, `personal`
+the rest); restart, `dogchefbox make start` and the slots (named volumes kept); the `~/.claude/CLAUDE.md` block from
+`claude-devbox.md`; handoffs `devbox` -> `dogchefbox`; `devbox` -> box; the Orca registry (payload and its sha256 `content_hash`).
+A re-run continues where it stopped.
+
+Whole rollback: stop sessions, Orca and containers; `rm ~/Projects && mv ~/projects ~/Projects`; restore the files from the backup
+folder (`cp -a` keeps the full paths); sed the git links back from `git-links.tsv`; rename the `-home-fabio-projects-*` Claude dirs back;
+`lxc config device` back from `lxc-dev.txt` / `lxc-personal.txt`; `dogchefbox make start` from the old path. After a week, with nothing
+naming it, `rm ~/Projects` (the symlink). Test: `node --test nucbox/tests/rename-projects.test.mjs`.
 
 ### Personal container `personal` (LXD)
 
