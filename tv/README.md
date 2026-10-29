@@ -46,7 +46,7 @@ back with `pm move-package <pkg> internal` and `pm move-primary-storage internal
 on 2026-10-28; the stick holds nothing now.
 
 Stremio streams through the NucBox (`nucbox/stremio-server.container`, cache
-10 GB there): Stremio → Settings → Server → URL `http://192.168.68.50:11470/`.
+10 GB there): Stremio → Settings → Server → URL `http://192.168.68.50:11470/`. iPad (needs HTTPS): `https://stremio.casa.byfc.pt/` (`nucbox/caddy-stremio.sh`). Embedded subtitles fail when the server transcodes for the iPad: Settings → Player → VLC plays the MKV directly.
 Back to `http://127.0.0.1:11470/` when the NucBox is off. The TV's own server
 keeps "no caching" (`cacheSize` 0; its torrent cache would fill the TV)
 and "Run in background" is off, so it does not start (~116 MB RAM).

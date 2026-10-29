@@ -177,6 +177,7 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 ./caddy-install.sh                # Caddy modules, environment file, service drop-in, baseline Caddyfile
 ./install-orca.sh [orca.deb]      # installs orca-ide from the .deb if missing; renders orca.service, linger, starts it
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
+./caddy-stremio.sh                # adds the @stremio site (https://stremio.CADDY_DOMAIN, for the iPad) (--print: render only)
 ./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
 ./caddy-previews.sh               # https://<port>.PREVIEW_DOMAIN -> 127.0.0.1:<port>, tailnet + LAN, shared login
 ./caddy-previews.sh --rotate-key  # new previews key: ends every preview session (Everon's stay)

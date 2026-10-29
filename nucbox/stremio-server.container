@@ -1,6 +1,7 @@
 # Stremio streaming server for the TV (tv/README.md): torrents and their cache live here, not on the TV.
 # Rootless podman quadlet: ln -s "$PWD/stremio-server.container" ~/.config/containers/systemd/ && systemctl --user daemon-reload && systemctl --user start stremio-server
 # LAN only: sudo ufw allow from 192.168.68.0/24 to any port 11470 proto tcp comment 'Stremio server'
+# HTTPS (the iPad/web app needs it): ./caddy-stremio.sh puts https://stremio.CADDY_DOMAIN in front of it.
 [Container]
 Image=docker.io/stremio/server:latest
 PublishPort=11470:11470
