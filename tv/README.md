@@ -24,11 +24,10 @@ Done on a Mi TV MOOR2 (Google TV, Android 11, 1.8 GB RAM, MediaTek M7632) on
 
 ```
 tv/debloat.sh <tv-ip>          # telemetry, Xiaomi extras, PatchWall, Play Auto Installs
-tv/debloat.sh <tv-ip> --apps   # also YouTube (SmartTube replaces it), Netflix, Prime Video, AirCast
+tv/debloat.sh <tv-ip> --apps   # also YouTube (SmartTube replaces it), Netflix, AirCast, Spotify, Downloader, SkyShowtime
 ```
 
-Packages missing on another model are reported as `absent` and skipped.
-Animations go to 0.5x. Removing `android.autoinstalls.config.xiaomi.amelie`
+Packages missing on another model are reported as `absent` and skipped. Removing `android.autoinstalls.config.xiaomi.amelie`
 (Play Auto Installs) is what stops partner apps from coming back; a Xiaomi
 firmware update can still restore apps, so run the script again after one.
 
@@ -39,9 +38,20 @@ firmware update can still restore apps, so run the script again after one.
 
 ## USB stick as internal storage
 
-Only worth it when space runs out: the ports are USB 2.0 and apps on the stick
-open slower. The stick is formatted and tied to this TV; pulled out, its apps
-stop opening.
+Not usable on this TV: every standby (suspend to RAM) cuts USB power, and on
+wake vold sees the stick as removed, kills every app using it and mounts it
+again, sometimes not at all. `settings put global mitv_go_suspend 0` is ignored
+(the log still says `go to str direct`). Apps and shared storage were moved
+back with `pm move-package <pkg> internal` and `pm move-primary-storage internal`
+on 2026-10-28; the stick holds nothing now.
+
+Stremio streams through the NucBox (`nucbox/stremio-server.container`, cache
+10 GB there): Stremio → Settings → Server → URL `http://192.168.68.50:11470/`.
+Back to `http://127.0.0.1:11470/` when the NucBox is off. The TV's own server
+keeps "no caching" (`cacheSize` 0; its torrent cache would fill the TV)
+and "Run in background" is off, so it does not start (~116 MB RAM).
+
+What follows is kept for a TV that does keep USB powered.
 
 1. Plug it in with the TV **off at the wall**, in the port labelled with a
    voltage (more current). In the other port the stick kept dropping.
@@ -73,6 +83,30 @@ Google TV cannot show chosen app channels under the favourites; Projectivy
 6. Home button and a reboot must both land in Projectivy.
 
 Barba Negra and Stremio publish no channels.
+
+Backup of the finished setup (second TV, 2026-10-29) is outside the repo, on
+the NucBox: `~/backups/tv/projectivy-2026-10-29.ab` (it also holds Firebase IDs
+and crash logs). Taken with `adb backup -f <file> -noapk com.spocky.projengmenu`;
+put it on another TV with Projectivy installed: `adb restore <file>` and confirm
+on screen. Channel rows follow the app name (MEO, Prime Video, SmartTube); no
+setting reorders them.
+
+## Sound (second TV, MiTV-MOOQ0)
+
+Level 1 was too loud and voices too quiet. No firmware setting lowers the volume
+curve (checked the `g_audio__*` keys in MiTVSettings). What helps:
+
+- `settings put global sound_advanced_dialogue_enhancer 1` and
+  `sound_advanced_volume_leveler 1` (the TV service applies them; not in the menu).
+  Sound mode back to Default (the Custom mode had every EQ band at -10).
+- Precise Volume 2.0 (not on the TV's Play Store: APKMirror bundle, signer cert
+  SHA-256 `7372a085…af66a`), `adb install-multiple base.apk split_config.armeabi_v7a.apk
+  split_config.pt.apk split_config.en.apk split_config.xhdpi.apk`, then
+  `pm grant com.phascinate.precisevolume android.permission.DUMP` for the global
+  effect. Equalizer → Graphic EQ: preset Vocals, post-gain -18 dB.
+- Stremio → Settings → Playback: audio passthrough off (passthrough skips the
+  equalizer), player VLC. Stereo sources keep music and voice in one mix, so the
+  EQ can only do so much there.
 
 ## Close
 
