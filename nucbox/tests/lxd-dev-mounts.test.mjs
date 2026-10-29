@@ -1,6 +1,6 @@
 // lxd-dev-mounts.sh against a stub lxc that keeps device state in files: `dev` gets one disk per dogchef folder
 // (~/projects/dogchef, Orca workspaces whose worktrees are dogchef), the old whole-tree disks and stale m-* go,
-// a second run changes nothing, and it never names `personal`.
+// a second run changes nothing, and it touches no other instance.
 // Run: node --test nucbox/tests/lxd-dev-mounts.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";

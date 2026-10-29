@@ -1,4 +1,4 @@
-// box: devbox -> LXD `personal`, dogchefbox -> LXD `dev`, each refusing the other's folders. A stub lxc prints its arguments.
+// box, reached as devbox: runs in LXD `dev` from dogchef folders only. A stub lxc prints its arguments.
 // Run: node --test nucbox/tests/box.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,62 +26,42 @@ function setup() {
   return { home, dogRepo, run, done: () => rmSync(home, { recursive: true, force: true }) };
 }
 
-test("devbox runs in `personal` from a non-dogchef folder, same cwd", () => {
-  const t = setup();
-  try {
-    const cwd = join(t.home, "plain");
-    const r = t.run("devbox", cwd, "make", "up");
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, new RegExp(`^lxc exec personal --cwd ${cwd} -- sudo -u fabio -H bash -lc .*GRAPHIFY_SKIP_HOOK=1.* ${cwd} make up\n$`));
-  } finally { t.done(); }
-});
-
-test("dogchefbox runs in `dev` from ~/projects/dogchef and from a dogchef-be worktree", () => {
+test("devbox runs in `dev` from ~/projects/dogchef and from a dogchef-be worktree, same cwd", () => {
   const t = setup();
   try {
     for (const cwd of [join(t.home, "projects/dogchef/dev"), t.dogRepo]) {
-      const r = t.run("dogchefbox", cwd, "true");
+      const r = t.run("devbox", cwd, "make", "up");
       assert.equal(r.status, 0, r.stderr);
-      assert.match(r.stdout, new RegExp(`^lxc exec dev --cwd ${cwd} `));
+      assert.match(r.stdout, new RegExp(`^lxc exec dev --cwd ${cwd} -- sudo -u fabio -H bash -lc .*GRAPHIFY_SKIP_HOOK=1.* ${cwd} make up\n$`));
     }
   } finally { t.done(); }
 });
 
-test("devbox in a dogchef folder exits 2 naming dogchefbox, and never calls lxc", () => {
+test("devbox in a folder that is not dogchef exits 2 and never calls lxc", () => {
   const t = setup();
   try {
-    for (const cwd of [join(t.home, "projects/dogchef/dev"), t.dogRepo]) {
-      const r = t.run("devbox", cwd, "true");
-      assert.equal(r.status, 2);
-      assert.match(r.stderr, /use dogchefbox/);
+    const r = t.run("devbox", join(t.home, "plain"), "true");
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /devbox runs dogchef folders only/);
+    assert.equal(r.stdout, "");
+  } finally { t.done(); }
+});
+
+test("any other name, dogchefbox included, exits 64", () => {
+  const t = setup();
+  try {
+    for (const n of ["dogchefbox", "other"]) {
+      const r = t.run(n, join(t.home, "projects/dogchef/dev"), "true");
+      assert.equal(r.status, 64, n);
       assert.equal(r.stdout, "");
     }
   } finally { t.done(); }
 });
 
-test("dogchefbox in a plain folder exits 2 naming devbox", () => {
+test("DEVBOX_INSTANCE overrides the instance", () => {
   const t = setup();
   try {
-    const r = t.run("dogchefbox", join(t.home, "plain"), "true");
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /use devbox/);
-    assert.equal(r.stdout, "");
-  } finally { t.done(); }
-});
-
-test("an unknown basename exits 64", () => {
-  const t = setup();
-  try {
-    const r = t.run("other", join(t.home, "plain"), "true");
-    assert.equal(r.status, 64);
-    assert.equal(r.stdout, "");
-  } finally { t.done(); }
-});
-
-test("the instance names can be overridden by env", () => {
-  const t = setup();
-  try {
-    const r = spawnSync(join(t.home, "bin/devbox"), ["true"], { cwd: join(t.home, "plain"), encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}`, DEVBOX_INSTANCE: "x" } });
+    const r = spawnSync(join(t.home, "bin/devbox"), ["true"], { cwd: join(t.home, "projects/dogchef/dev"), encoding: "utf8", env: { ...process.env, PROJECTS_DIR: undefined, HOME: t.home, PATH: `${join(t.home, "bin")}:${process.env.PATH}`, DEVBOX_INSTANCE: "x" } });
     assert.match(r.stdout, /^lxc exec x /);
   } finally { t.done(); }
 });

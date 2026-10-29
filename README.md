@@ -370,7 +370,7 @@ by hand when they change.
 The `dev` repo's compose binds `127.0.0.1:80/443`, which the box's Caddy already holds on every
 address, and the repo is shared, so it runs unchanged in an LXD system container `dev` with its own
 Docker and its own LAN address. Everything dogchef (repos of the `dogchef-be` org) goes through
-`dogchefbox`; nothing of it runs on the host. The apps open inside the box and, through the NucBox only,
+`devbox`; nothing of it runs on the host. The apps open inside the box and, through the NucBox only,
 from the Mac ([below](#dogchef-apps-and-db-from-the-mac)).
 
 ```bash
@@ -384,23 +384,23 @@ lxc start dev && lxc exec dev -- cloud-init status --wait
 lxc exec dev -- bash -c 'usermod -l fabio -d /home/fabio -m ubuntu && groupmod -n fabio ubuntu'
 nucbox/lxd-dev-mounts.sh            # the dogchef disks, see below
 lxc exec dev -- bash -c 'apt-get install -y docker.io docker-compose-v2 git make curl && usermod -aG docker fabio'
-install -m 755 nucbox/box ~/.local/claude-wrap/box && ln -sfn ~/.local/claude-wrap/box ~/.local/bin/dogchefbox
-# the rule for Claude Code (Orca) is nucbox/claude-devbox.md, kept in ~/.claude/CLAUDE.md (rename-projects.sh swaps the old block for it)
-cd ~/projects/dogchef/dev && dogchefbox make setup && dogchefbox make start
+install -m 755 nucbox/box ~/.local/claude-wrap/box && ln -sfn ~/.local/claude-wrap/box ~/.local/bin/devbox
+# the rule for Claude Code (Orca) is nucbox/claude-devbox.md, kept as a block in ~/.claude/CLAUDE.md
+cd ~/projects/dogchef/dev && devbox make setup && devbox make start
 ```
 
 - `lxd-dev-mounts.sh` (lxc only, safe to run again, works on a stopped container) gives `dev` one disk per dogchef
   folder, same path inside: `~/projects/dogchef` (`m-p-dogchef`) and each `~/orca/workspaces/*` whose worktrees are
-  dogchef (`m-o-<workspace>`, `is-business-dir.sh`; the rule `lxd-personal.sh` inverts). It removes the old whole-tree
-  `projects` and `orca` disks and stale `m-*` ones, and never touches `personal`. **Re-run it after creating a dogchef
+  dogchef (`m-o-<workspace>`, `is-business-dir.sh`). It removes the old whole-tree
+  `projects` and `orca` disks and stale `m-*` ones and no other device. **Re-run it after creating a dogchef
   Orca workspace.** On a stopped container it prints the `install -d` for the mount parents to run after `lxc start`.
 - Create the user before adding the disks: the mount creates `/home/fabio` as root and
   `usermod -m` then fails. Copy `~/.gitconfig`, the GitHub key and its `known_hosts` lines into the
   container's home; the mkcert CA comes from the Mac's `dev/.config/mkcert`.
-- `dogchefbox` uses `lxc exec`, not ssh. The container's sshd (key-only) and dev-proxy's LAN ports exist
+- `devbox` uses `lxc exec`, not ssh. The container's sshd (key-only) and dev-proxy's LAN ports exist
   for the Mac and are reachable from the NucBox's address only (`dev-lan-access.sh`, below).
-- `dogchefbox` (`lxc exec … sudo -u fabio -H bash -l`) runs in the current directory as fabio with the
-  `docker` group, and refuses a folder that is not dogchef (exit 2, `is-business-dir.sh`, the rule `claude-wrap` uses); `lxc exec --user` alone gives gid 0 and no supplementary groups.
+- `devbox` (`box` reached by that name; `lxc exec … sudo -u fabio -H bash -l`, instance `DEVBOX_INSTANCE`, default `dev`) runs in the current directory as fabio with the
+  `docker` group, and refuses a folder that is not dogchef (exit 2, "devbox runs dogchef folders only", `is-business-dir.sh`, the rule `claude-wrap` uses): every other project runs on the host; `lxc exec --user` alone gives gid 0 and no supplementary groups.
 - `br0` traffic does not go through ufw only because `br_netfilter` is not loaded
   (`lsmod | grep br_netfilter` empty). Loaded later, it would cut the container and the `haos` VM off;
   `/etc/sysctl.d/99-br0.conf` sets `net.bridge.bridge-nf-call-ip{,6}tables=0` at boot, and an
@@ -416,62 +416,47 @@ cd ~/projects/dogchef/dev && dogchefbox make setup && dogchefbox make start
   WARP would take it) and pass it to `warp-cli registration token "<link>"`, then `warp-cli connect`.
   `make reset-db-{dogchef,vetchef,erp}` needs it.
 - After a reboot the container comes back but the stack does not (no restart policy in the compose):
-  `cd ~/projects/dogchef/dev && dogchefbox make start`.
+  `cd ~/projects/dogchef/dev && devbox make start`.
 - The `dev` repo's MCP servers run on the host with Claude Code: `uv`, the AWS CLI and the Google Cloud
   SDK live under `~/.local` and `~/google-cloud-sdk` (no sudo), `~/.bashrc` exports
   `GITHUB_PERSONAL_ACCESS_TOKEN` from `gh auth token`, and the AWS/gcloud logins are yours.
 
 ### Renaming `~/Projects` to `~/projects` (window script)
 
-`nucbox/rename-projects.sh` is the one-time window: the rename and the devbox/dogchefbox switch-over together. Close every Claude
-session and the Orca app, open a plain terminal (ssh or tty, not Orca, not Claude, cwd outside `~/Projects`) and run
-`bash nucbox/rename-projects.sh --dry-run --slot <tree>...` first (prints every action, changes nothing), then without `--dry-run`.
-`--slot <worktree>` (repeatable) names the dev worktrees whose `dev-apps` replica is recreated after the restart, `--no-slots` says
-none. The window takes the dev stack and both containers down for about half an hour. Steps, each verified, the first failure stops
-with its rollback: stop Orca; back up to `~/backup-projects-rename` (a fixed name: a re-run on another day reuses it; json, histories, wrapper dir, Orca DB, `lxc config show`,
-git links before-state, docker volumes and their mounts, open factory `task.md` files); stop the stack and containers; `mv` + the compat symlink `~/Projects -> projects`; rewrite the git worktree
-links; Claude state (project dirs, json paths, history `project` fields); install box and wrapper; LXD disks (`dev` dogchef only, `personal`
-the rest); restart, `dogchefbox make start` and the slots (named volumes kept and checked: the same containers must mount the same volumes); the `~/.claude/CLAUDE.md` block from
-`claude-devbox.md`; handoffs `devbox` -> `dogchefbox`; the `Folder:` line of open factory records under `~/.factory/tasks` (an explicit `Status:` not starting with done or stopped; a record without one is history); `devbox` -> box; the Orca registry (payload and its sha256 `content_hash`).
+`nucbox/rename-projects.sh` is the one-time window: the rename, `devbox` becoming the guarded box and `dev` getting the dogchef
+folders only. Close every Claude session and the Orca app, open a plain terminal (ssh or tty, not Orca, not Claude, cwd outside
+`~/Projects`) and run `bash ~/Projects/personal/evcc-pi/nucbox/rename-projects.sh --dry-run --slot <tree>...` first (prints every action, changes nothing),
+then without `--dry-run`. `--slot <worktree>` (repeatable) names the dev worktrees whose `dev-apps` replica is recreated after the
+restart, `--no-slots` says none. The window takes the dev stack and `dev` down for about half an hour. Steps, each verified, the
+first failure stops with its rollback: stop Orca; back up to `~/backup-projects-rename` (a fixed name: a re-run on another day
+reuses it; json, histories, `CLAUDE.md`, the old `devbox` one-liner and any `dogchefbox`, wrapper dir, Orca DB, `lxc config show dev`,
+git links before-state, docker volumes and their mounts, open factory `task.md` files); stop the stack and `dev`; `mv` + the compat
+symlink `~/Projects -> projects`; rewrite the git worktree links; Claude state (project dirs, json paths, history `project` fields);
+install the wrapper and box, point `~/.local/bin/devbox` at it and remove `~/.local/bin/dogchefbox`; LXD disks (`dev` dogchef
+only, `lxd-dev-mounts.sh`); restart, `devbox make start` and the slots (named volumes kept and checked: the same containers must
+mount the same volumes); `~/.claude/CLAUDE.md`: old paths rewritten, and the devbox block swapped for `claude-devbox.md` only
+when it still differs beyond paths and whitespace (the dry-run prints the diff); handoffs: old paths, and any `dogchefbox` back to
+`devbox`; the `Folder:` line of open factory records under `~/.factory/tasks` (an explicit `Status:` not starting with done or
+stopped; a record without one is history; every old path on the line); the Orca registry (payload and its sha256 `content_hash`).
 A re-run continues where it stopped.
 
-Whole rollback: stop sessions, Orca and containers; `rm ~/Projects && mv ~/projects ~/Projects`; restore the files from the backup
+Whole rollback: stop sessions, Orca and `dev`; `rm ~/Projects && mv ~/projects ~/Projects`; restore the files from the backup
 folder (`cp -a` keeps the full paths); sed the git links back from `git-links.tsv`; rename the `-home-fabio-projects-*` Claude dirs back;
-`lxc config device` back from `lxc-dev.txt` / `lxc-personal.txt`; `dogchefbox make start` from the old path. After a week, with nothing
+`lxc config device` back from `lxc-dev.txt`; `devbox make start` from the old path. After a week, with nothing
 naming it, `rm ~/Projects` (the symlink). Test: `node --test nucbox/tests/rename-projects.test.mjs`.
 
-### Personal container `personal` (LXD)
+After the window, with every Claude session still closed, `bash ~/projects/personal/evcc-pi/nucbox/claude-prune-projects.sh --dry-run`
+lists, then without the flag removes, the `projects` keys of `~/.claude.json` and `~/.claude-business/.claude.json` and the
+`~/.claude*/projects/<dir>` whose folder no longer exists (a dir with no recorded cwd is kept). It backs up to
+`~/backup-claude-prune` (json copies; removed dirs are moved there). Test: `node --test nucbox/tests/claude-prune-projects.test.mjs`.
 
-`devbox` runs in the LXD container `personal`, on its own NAT bridge `lxdpersonal0` (10.250.50.0/24): no LAN or
-tailnet address, no DHCP. Its dev servers reach the host's 127.0.0.1 only through LXD proxy devices (3010 5000 8000
-8010 8026 8125 9001, plus the container's 3000 as 3100 because the host's stellantis-worker holds 3000).
+### Projects folder in the scripts
 
-```bash
-./lxd-personal.sh     # no sudo, only lxc; safe to run again; env PERSONAL_* override names, sizes, ports, DNS
-lxc delete -f personal && lxc network delete lxdpersonal0     # undo; the mounted folders are untouched
-```
-
-- LXD's `dns.mode=none` still starts its dnsmasq with DNS on, which dies on Pi-hole's `:53`; the bridge therefore
-  sets `raw.dnsmasq=port=0`, and the container gets a static address and the host's Pi-hole (192.168.68.50, `PERSONAL_DNS`) as its only resolver,
-  no public fallback, through cloud-init.
-- No dogchef files inside: instead of mounting all of `~/projects` and `~/orca`, the script adds one disk (`m-p-<dir>`,
-  `m-o-<workspace>`, same paths, `shift=true`) per `~/projects/*` except dogchef and per `~/orca/workspaces/*` whose
-  worktrees are not dogchef (`is-business-dir.sh`; an empty workspace counts as personal). A re-run adds disks for
-  new dirs and removes stale `m-*` ones, so **re-run the script after creating an Orca workspace or a projects folder**.
-- Run it from `nucbox/` (`cd ~/projects/personal/evcc-pi/nucbox`).
 - The scripts take the projects folder from `PROJECTS_DIR` (default `~/projects`, or `~/Projects` while only that exists, i.e. until the rename; set in `is-business-dir.sh`, which `claude-business.sh` and `dev-lan-access.sh` source). `is_business_dir` compares physical paths, so the `~/Projects` compat symlink still counts.
-- Probed on this host: ufw is active (`/etc/default/ufw`: input and forward default DROP), so with no rule for
-  `lxdpersonal0` TCP/UDP to the host (Pi-hole `:53`, DHCP) and forwarded to the internet are dropped while ICMP
-  passes. The script then stops after creating the container, before provisioning, when it has no TCP egress or
-  cannot resolve a name, and prints `sudo ufw status verbose` (fallback `sudo nft list ruleset`). The two ufw
-  rules that open it are not applied by the script (root):
 
-```bash
-sudo ufw route allow in on lxdpersonal0 out on br0 from 10.250.50.0/24 comment 'LXD personal -> internet (LAN/tailnet blocked by LXD ACL)'
-sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53 comment 'LXD personal -> Pi-hole DNS'     # INPUT to the Pi-hole
-```
+### Host ufw rules
 
-- The host's ufw rules (from the audit of `ufw status numbered`, 2026-10-23; default input and forward DROP):
+From the audit of `ufw status numbered`, 2026-10-23; default input and forward DROP (`/etc/default/ufw`):
 
 | Rule | Why |
 |---|---|
@@ -482,28 +467,8 @@ sudo ufw allow in on lxdpersonal0 to 192.168.68.50 port 53 comment 'LXD personal
 | `tailscale0` in (v4 and v6) | tailnet clients reach the host |
 | `tailscale0` forward to `br0` (v4 and v6) | the subnet router: tailnet to the LAN and `dev` |
 | 8887 forward to 192.168.68.53 | DNAT target of the port-8887 forward |
-| `allow in on lxdpersonal0 to 192.168.68.50 port 53 comment 'LXD personal -> Pi-hole DNS'` | `personal` resolves through Pi-hole |
-| `route allow in on lxdpersonal0 out on br0 from 10.250.50.0/24 comment 'LXD personal -> internet (LAN/tailnet blocked by LXD ACL)'` | `personal` reaches the internet; the LAN and tailnet are blocked by the LXD ACL below, not by ufw |
 
-- ufw has no deny for the LAN: a `route deny ... to 192.168.68.0/22` was applied first and deleted by the user
-  (`sudo ufw route delete deny in on lxdpersonal0 to 192.168.68.0/22`) once the ACL below was confirmed live. The ACL is
-  the only block for the LAN and the tailnet.
-
-- There is no ufw rule for the tailnet: tailscale's `ts-forward` chain is jumped before ufw in `FORWARD`
-  and accepts everything out of `tailscale0` (same cause as "tailscale comes before ufw" above), so no ufw rule can
-  block it; measured: `100.100.100.100:53` and a peer's ping were open from the container. The script therefore also
-  creates an LXD network ACL `personal-egress` on `lxdpersonal0` (nftables driver, no sudo; default egress allow) and
-  replaces its rules on every run (`lxc network acl edit`), so an ACL left empty by an interrupted run is repaired:
-  drop to 192.168.68.0/22 and 100.64.0.0/10, except 192.168.68.50, where tcp and udp ports other than 53 and icmp4 are
-  dropped by their own rules (an ACL drop beats an allow, so the range skips the Pi-hole instead of allowing it;
-  `PERSONAL_LAN_DROP` changes it together with `PERSONAL_DNS`). LXD ACLs cannot express "every protocol except port
-  53", so other IP protocols (sctp, gre, ...) to 192.168.68.50 are not dropped. With it the tailnet, the LAN and the
-  Pi-hole's other tcp/udp ports and pings are blocked and DNS plus the internet work. Undo with the network delete above, then
-  `lxc network acl delete personal-egress`.
-- Provisioning follows `dev`: php 8.4 from the sury repo (football-fines pins 8.4.x; Ubuntu's own composer package
-  would pull php 8.5, so composer is the official installer, verified against composer.github.io/installer.sig, in `/usr/local/bin`), docker.io + compose, node 24 from
-  NodeSource, python3-venv, corepack. Any failing step stops the script, which prints `ready` only when
-  `php` 8.4, `composer`, `docker ps`, `node` and `python3` work for `fabio` (docker group).
+The two `lxdpersonal0` rules of the former `personal` container were removed on 2026-10-29.
 
 ### dogchef apps and DB from the Mac
 
@@ -541,7 +506,7 @@ apps have no login in front of them; they rely on the Tailscale ACL below and on
 - **IPv6**: the drop rule matches no address family, so 22/80/443 over IPv6 time out on any
   address `eth0` has or gets (today only a link-local one).
 - **After a reboot** the filter and sshd come up with the container (`boot.autostart`), the LAN ports
-  with `dogchefbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
+  with `devbox make start`, and Pi-hole keeps its line. The container gets its address by DHCP (it was
   `.69` before `.54`): reserve it in the router for its MAC (`lxc config get dev volatile.eth0.hwaddr`).
   If it changes anyway, dev-proxy still starts (`net.ipv4.ip_nonlocal_bind=1` in the container lets it
   bind the old address), but the apps are only reachable from the Mac again after running **both**
@@ -585,7 +550,7 @@ repo's `docker-compose.yml` (`MYSQL_ROOT_PASSWORD`).
 Rollback, in this order (the LAN ports close before the filter goes, so 80/443 are never open to the LAN):
 
 ```bash
-cd ~/projects/dogchef/dev && rm docker-compose.override.yml && dogchefbox docker compose -p fresh-chef up -d --no-deps proxy
+cd ~/projects/dogchef/dev && rm docker-compose.override.yml && devbox docker compose -p fresh-chef up -d --no-deps proxy
 lxc exec dev -- systemctl disable --now dev-lan-filter.service ssh.service
 lxc exec dev -- rm /etc/systemd/system/dev-lan-filter.service /etc/nftables-dev-lan.nft /etc/ssh/sshd_config.d/10-dev-lan.conf /etc/sysctl.d/60-dev-lan.conf
 lxc exec dev -- sysctl -w net.ipv4.ip_nonlocal_bind=0

@@ -91,8 +91,8 @@ services:
 EOF
 exclude=$(git -C "$DEV_REPO" rev-parse --path-format=absolute --git-common-dir)/info/exclude
 grep -qxF /docker-compose.override.yml "$exclude" || echo /docker-compose.override.yml >>"$exclude"
-(cd "$DEV_REPO" && dogchefbox docker compose -p fresh-chef up -d --no-deps proxy)
+(cd "$DEV_REPO" && devbox docker compose -p fresh-chef up -d --no-deps proxy)
 
-(cd "$DEV_REPO" && dogchefbox docker port dev-proxy)
+(cd "$DEV_REPO" && devbox docker port dev-proxy)
 lxc exec dev -- nft list table inet dev_lan
 lxc exec dev -- systemctl is-enabled dev-lan-filter.service ssh.service

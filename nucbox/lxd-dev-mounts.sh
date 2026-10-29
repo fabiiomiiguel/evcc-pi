@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Gives the LXD container `dev` one disk per dogchef folder, same path inside: $PROJECTS_DIR/dogchef and every
-# ~/orca/workspaces/* whose worktrees are dogchef (is-business-dir.sh, the rule lxd-personal.sh inverts). The old
+# ~/orca/workspaces/* whose worktrees are dogchef (is-business-dir.sh). The old
 # whole-tree `projects`/`orca` disks and stale m-* ones are removed. Safe to run again; lxc only, no sudo; never
-# touches `personal` or devices other than those. Changing disks works on a stopped container too.
+# touches devices other than those. Changing disks works on a stopped container too.
 set -euo pipefail
 INST=${DEV_INSTANCE:-dev}
 USER_NAME=${DEV_USER:-fabio}
