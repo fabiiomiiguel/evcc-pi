@@ -72,7 +72,10 @@ Google TV cannot show chosen app channels under the favourites; Projectivy
    is what brings channels), deny notifications and usage reports.
 2. Run `tv/debloat.sh <tv-ip>` again: it turns on Projectivy's accessibility
    service, which takes the Home button. Check Settings → General →
-   **Bypass current launcher** is on.
+   **Bypass current launcher** is on. Settings → Accessibility service →
+   **Enable button remapping** off: with it on, the service takes the remote's
+   Home while the screensaver runs and the screensaver never closes (only Back
+   does). Off, Home closes it and Projectivy still replaces the Google TV home.
 3. Gear → **Edit channels**: hide "Watch next"; turn on MEO (Tendências TV,
    Tendências VideoClube) and SmartTube (Subscriptions, Recommended, History),
    each channel's **Visible** switch.
