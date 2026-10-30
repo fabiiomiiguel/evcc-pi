@@ -1,0 +1,40 @@
+# Home Assistant automation: an AC that goes from cool or dry to off keeps its coil wet, which is the
+# "dirty sock" smell. Run it in fan_only for 30 min to dry the coil, then off. Does not fire on fan_only -> off,
+# so it cannot loop with ha-ac-solar-fresh-air.yaml's stop. If the mode changed during the 30 min (the user
+# took over, or the solar start/stop acted), it does nothing.
+alias: AC coil dry
+description: cool/dry -> off runs fan_only for 30 min, then off
+triggers:
+  - trigger: state
+    entity_id: [climate.frente, climate.suite, climate.jardim, climate.escritorio, climate.sala]
+    from: [cool, dry]
+    to: "off"
+actions:
+  - action: climate.set_hvac_mode
+    target:
+      entity_id: "{{ trigger.entity_id }}"
+    data:
+      hvac_mode: fan_only
+  - action: climate.set_fan_mode
+    target:
+      entity_id: "{{ trigger.entity_id }}"
+    data:
+      fan_mode: low
+  - action: switch.turn_on
+    target:
+      entity_id: "{{ trigger.entity_id | replace('climate.', 'switch.') }}_mudo"
+    continue_on_error: true
+  - delay: "00:30:00"
+  - if:
+      - condition: template
+        value_template: "{{ is_state(trigger.entity_id, 'fan_only') }}"
+    then:
+      - action: climate.turn_off
+        target:
+          entity_id: "{{ trigger.entity_id }}"
+      - action: switch.turn_off
+        target:
+          entity_id: "{{ trigger.entity_id | replace('climate.', 'switch.') }}_mudo"
+        continue_on_error: true
+mode: parallel
+max: 5

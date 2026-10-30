@@ -1,0 +1,255 @@
+# Home Assistant automation: while the solar panels produce, the ACs that are off dehumidify or heat for 30 min,
+# then run fan_only for the rest of the window so the coil dries (a wet coil is what smells). Per AC: room < 22 C
+# heats to 22, otherwise dry at 20 (so the compressor runs), no room temperature dry unchanged; after 30 min the
+# AC goes to fan_only and its setpoint is restored. Fresh air (switch.<room>_ar_fresco) is switched on only when
+# weather.forecast_casa dew_point is below 12 C (checked at start and again at fan_only, where it is also switched
+# off otherwise). Needs sensor.evcc_pv_power (W), evcc's /api/state pvPower: see the README, HA has no
+# evcc integration, so that sensor is created once by hand. Without it the start never fires; only the
+# 16:00 stop works.
+# Silent mode (switch.<room>_mudo) is on in fan_only, off in heat/dry and off at the stop. hOn resets the AC's
+# switches on a mode change, so fresh air and silent are always set after the mode.
+# What the automation started is recorded outside the run, in input_text.ac_solar_<room> (JSON mode, restore, since;
+# created once through the websocket API: see the README), so a restart or reload cannot strand an AC in heat/dry.
+# Every 5 min (and on HA start) a recorded AC still in its recorded mode for >= 30 min goes to fan_only with its
+# setpoint restored; at the stop it is restored and turned off. A recorded AC whose mode the user changed is just
+# unrecorded, untouched. cool/auto are never touched; fan_only ACs are turned off at the stop.
+alias: AC solar fresh air
+description: Heat (room < 22 C) or dry 30 min (recorded in input_text, survives restarts) then fan only, fresh air if dew point < 12 C, on the ACs when PV > 1500 W for 10 min, or at 09:00 / HA start with PV already > 1500 W (09:00-15:00); off when PV < 500 W for 30 min or at 16:00
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.evcc_pv_power
+    above: 1500
+    for: "00:10:00"
+    id: start
+  # numeric_state fires only on a crossing: PV already above 1500 W at 09:00 or when HA starts would never start
+  - trigger: time
+    at: "09:00:00"
+    id: start
+  - trigger: homeassistant
+    event: start
+    id: start
+  - trigger: time_pattern
+    minutes: "/5"
+    id: tick
+  - trigger: numeric_state
+    entity_id: sensor.evcc_pv_power
+    below: 500
+    for: "00:30:00"
+    id: stop
+  - trigger: time
+    at: "16:00:00"
+    id: stop
+actions:
+  - variables:
+      rooms: [frente, suite, jardim, escritorio, sala]
+      now_ts: "{{ as_timestamp(now()) | int }}"
+      dew_ok: "{{ is_number(state_attr('weather.forecast_casa', 'dew_point')) and state_attr('weather.forecast_casa', 'dew_point') | float < 12 }}"
+  # recorded ACs that are due (or whose mode the user changed); at HA start this recovers a cancelled run
+  - if:
+      - condition: template
+        value_template: "{{ trigger.id in ['tick', 'start'] }}"
+    then:
+      - repeat:
+          for_each: "{{ rooms }}"
+          sequence:
+            - variables:
+                rec: "{{ states('input_text.ac_solar_' ~ repeat.item) | from_json({}) }}"
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ rec.mode is defined and is_state('climate.' ~ repeat.item, rec.mode) and now_ts - rec.since >= 1800 }}"
+                  sequence:
+                    - if:
+                        - condition: template
+                          value_template: "{{ rec.restore is not none }}"
+                      then:
+                        - action: climate.set_temperature
+                          target:
+                            entity_id: "climate.{{ repeat.item }}"
+                          data:
+                            temperature: "{{ rec.restore }}"
+                    - action: climate.set_hvac_mode
+                      target:
+                        entity_id: "climate.{{ repeat.item }}"
+                      data:
+                        hvac_mode: fan_only
+                    - action: climate.set_fan_mode
+                      target:
+                        entity_id: "climate.{{ repeat.item }}"
+                      data:
+                        fan_mode: low  # quiet: runs for hours
+                    # silent mode after the mode change: hOn resets the AC's switches on a mode change
+                    - if:
+                        - condition: template
+                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                      then:
+                        - action: switch.turn_on
+                          target:
+                            entity_id: "switch.{{ repeat.item }}_mudo"
+                    - if:
+                        - condition: template
+                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
+                      then:
+                        - if:
+                            - condition: template
+                              value_template: "{{ dew_ok }}"
+                          then:
+                            - action: switch.turn_on
+                              target:
+                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                          else:
+                            - action: switch.turn_off
+                              target:
+                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                    - action: input_text.set_value
+                      target:
+                        entity_id: "input_text.ac_solar_{{ repeat.item }}"
+                      data:
+                        value: ""
+                - conditions:
+                    - condition: template
+                      value_template: "{{ rec.mode is defined and not is_state('climate.' ~ repeat.item, rec.mode) }}"
+                  sequence:
+                    - action: input_text.set_value
+                      target:
+                        entity_id: "input_text.ac_solar_{{ repeat.item }}"
+                      data:
+                        value: ""
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'start' }}"
+          - condition: time
+            after: "09:00:00"
+            before: "15:00:00"
+        sequence:
+          # the REST sensor may have no value yet right after HA starts
+          - wait_template: "{{ has_value('sensor.evcc_pv_power') }}"
+            timeout: "00:02:00"
+          - condition: numeric_state
+            entity_id: sensor.evcc_pv_power
+            above: 1500
+          # per AC that is off: room < 22 C heats to 22, otherwise dry at 20 so the compressor runs (Haier dry stops
+          # below setpoint + ~2 C); no room temperature: dry, setpoint unchanged. restore = setpoint to put back
+          - variables:
+              started: >-
+                {% set ns = namespace(l=[]) %}{% for r in rooms if is_state('climate.' ~ r, 'off') %}{% set t = state_attr('climate.' ~ r, 'current_temperature') | float(none) %}{% set heat = t is not none and t < 22 %}{% set ns.l = ns.l + [{'room': r, 'mode': 'heat' if heat else 'dry', 'target': 22 if heat else (20 if t is not none else none), 'restore': state_attr('climate.' ~ r, 'temperature') | float(none)}] %}{% endfor %}{{ ns.l }}
+          - condition: template
+            value_template: "{{ started | count > 0 }}"
+          - repeat:
+              for_each: "{{ started }}"
+              sequence:
+                - if:
+                    - condition: template
+                      value_template: "{{ repeat.item.target is not none }}"
+                  then:
+                    - action: climate.set_temperature
+                      target:
+                        entity_id: "climate.{{ repeat.item.room }}"
+                      data:
+                        hvac_mode: "{{ repeat.item.mode }}"
+                        temperature: "{{ repeat.item.target }}"
+                  else:
+                    - action: climate.set_hvac_mode
+                      target:
+                        entity_id: "climate.{{ repeat.item.room }}"
+                      data:
+                        hvac_mode: "{{ repeat.item.mode }}"
+                - action: climate.set_fan_mode
+                  target:
+                    entity_id: "climate.{{ repeat.item.room }}"
+                  data:
+                    fan_mode: auto
+                # no silent mode in heat/dry: the compressor needs the airflow
+                - if:
+                    - condition: template
+                      value_template: "{{ has_value('switch.' ~ repeat.item.room ~ '_mudo') }}"
+                  then:
+                    - action: switch.turn_off
+                      target:
+                        entity_id: "switch.{{ repeat.item.room }}_mudo"
+                - if:
+                    - condition: template
+                      value_template: "{{ dew_ok and has_value('switch.' ~ repeat.item.room ~ '_ar_fresco') }}"
+                  then:
+                    - action: switch.turn_on
+                      target:
+                        entity_id: "switch.{{ repeat.item.room }}_ar_fresco"
+                - action: input_text.set_value
+                  target:
+                    entity_id: "input_text.ac_solar_{{ repeat.item.room }}"
+                  data:
+                    value: "{{ {'mode': repeat.item.mode, 'restore': repeat.item.restore, 'since': now_ts} | to_json }}"
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'stop' }}"
+        sequence:
+          - repeat:
+              for_each: "{{ rooms }}"
+              sequence:
+                - variables:
+                    rec: "{{ states('input_text.ac_solar_' ~ repeat.item) | from_json({}) }}"
+                - choose:
+                    # started by this automation and still in that mode: put the setpoint back and turn off
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ rec.mode is defined and is_state('climate.' ~ repeat.item, rec.mode) }}"
+                      sequence:
+                        - if:
+                            - condition: template
+                              value_template: "{{ rec.restore is not none }}"
+                          then:
+                            - action: climate.set_temperature
+                              target:
+                                entity_id: "climate.{{ repeat.item }}"
+                              data:
+                                temperature: "{{ rec.restore }}"
+                        - action: climate.turn_off
+                          target:
+                            entity_id: "climate.{{ repeat.item }}"
+                        - if:
+                            - condition: template
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
+                          then:
+                            - action: switch.turn_off
+                              target:
+                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                        - if:
+                            - condition: template
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                          then:
+                            - action: switch.turn_off
+                              target:
+                                entity_id: "switch.{{ repeat.item }}_mudo"
+                        - action: input_text.set_value
+                          target:
+                            entity_id: "input_text.ac_solar_{{ repeat.item }}"
+                          data:
+                            value: ""
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ is_state('climate.' ~ repeat.item, 'fan_only') }}"
+                      sequence:
+                        - action: climate.turn_off
+                          target:
+                            entity_id: "climate.{{ repeat.item }}"
+                        - if:
+                            - condition: template
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
+                          then:
+                            - action: switch.turn_off
+                              target:
+                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                        - if:
+                            - condition: template
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                          then:
+                            - action: switch.turn_off
+                              target:
+                                entity_id: "switch.{{ repeat.item }}_mudo"
+                        - action: input_text.set_value
+                          target:
+                            entity_id: "input_text.ac_solar_{{ repeat.item }}"
+                          data:
+                            value: ""
+mode: queued

@@ -235,6 +235,27 @@ Alerts: set Everon's `alertUrl` to `https://<ha-host>/api/webhook/<webhook_id>` 
 HA companion app needs its notification permission in the phone's settings, not only inside the app,
 for the message to reach the notification centre.
 
+`ha-ac-solar-fresh-air.yaml` is a Home Assistant automation that, when PV stays above 1500 W for 10 min, or is already
+above it at 09:00 or when HA starts (09:00-15:00), starts the ACs that are off: heat to 22 °C if the room is below
+22 °C, otherwise dry at 20 °C, and records it in `input_text.ac_solar_<room>` (JSON mode, restore, since), so a restart cannot strand an AC. Every 5 min and at HA start each recorded AC still in its mode for 30 min goes to fan only (fan low, silent mode on) with its original setpoint restored; at the stop (PV below 500 W for 30 min or 16:00) a recorded AC is restored and turned off, and the ACs in fan only are turned off. A recorded AC the user changed is just unrecorded. Create the five helpers once (HA websocket `input_text/create`, names `ac_solar_frente`, `_suite`, `_jardim`, `_escritorio`, `_sala`, max 255) or in Settings > Helpers > Text. The fresh-air switch is turned on only while the
+outside dew point (`weather.forecast_casa`) is below 12 °C. The fan only after the dry dries the coil, which is what smells when left wet. `ha-ac-coil-dry.yaml` runs an AC that goes from cool or dry to off in fan only (fan low, silent mode on) for 30 min, then off (silent off).
+The monthly 56 °C self-clean (`switch.<room>_autolimpeza_56degc`) is not automated: the hOn integration gives no
+duration or completion signal, run it by hand on a sunny day, one AC at a time. Heat/cool are never touched. The solar one reads
+`sensor.evcc_pv_power`, which HA does not have yet: add this to `configuration.yaml`, check the configuration and
+restart HA (evcc answers on `192.168.68.53:7070`):
+
+```yaml
+sensor:
+  - platform: rest
+    name: evcc PV power
+    unique_id: evcc_pv_power
+    resource: http://192.168.68.53:7070/api/state?jq=.pvPower
+    value_template: "{{ value | float(0) }}"
+    unit_of_measurement: W
+    device_class: power
+    scan_interval: 60
+```
+
 ### Previews of local dev servers
 
 Any dev server on the box opens at `https://<port>.PREVIEW_DOMAIN` (e.g. `https://4321.dev.example.com`) from
