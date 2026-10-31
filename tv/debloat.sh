@@ -23,8 +23,7 @@ BLOAT=(
 )
 APPS=(com.google.android.youtube.tv com.google.android.youtube.tvmusic com.netflix.ninja com.smartdevice.tv.aircast
       com.spotify.tv.android com.esaba.downloader com.skyshowtime.skyshowtime.google)
-# Never here: com.mitv.livetv (it is the HDMI input selector), com.google.android.apps.tv.launcherx
-# (disabling it leaves Home on a black setup screen), com.google.android.katniss (voice),
+# Never here: com.mitv.livetv (it is the HDMI input selector), com.google.android.katniss (voice),
 # com.google.android.apps.tv.dreamx (the screensaver: without it the TV suspends at screen_off_timeout, 10 min).
 
 $ADB connect "$IP:5555" >/dev/null
@@ -40,12 +39,13 @@ for p in "${PKGS[@]}"; do
   echo "$($S pm uninstall --user 0 "$p" | tr -d '\r')  $p"
 done
 
-# Projectivy takes the Home button through its accessibility service (the Google TV launcher stays enabled).
+# Projectivy becomes the real Home: launcherx (priority 2) outranks a preferred home, and with it
+# disabled setupwraith's black RecoveryActivity (priority 1) would. Shell cannot disable single components.
 if grep -qx com.spocky.projengmenu <<<"$INSTALLED"; then
-  $S settings put secure enabled_accessibility_services \
-    com.spocky.projengmenu/com.spocky.projengmenu.services.ProjectivyAccessibilityService
-  $S settings put secure accessibility_enabled 1
-  echo "Projectivy: Home button handled"
+  $S cmd package set-home-activity com.spocky.projengmenu/.ui.home.MainActivity >/dev/null
+  $S pm disable-user --user 0 com.google.android.tungsten.setupwraith >/dev/null
+  $S pm disable-user --user 0 com.google.android.apps.tv.launcherx >/dev/null
+  echo "Home: $($S cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -1)"
 fi
 
 $S dumpsys meminfo | grep -E 'Free RAM|Used RAM'

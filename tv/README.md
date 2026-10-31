@@ -70,12 +70,12 @@ Google TV cannot show chosen app channels under the favourites; Projectivy
 
 1. Install and open it. Onboarding: deny photos, **allow TV listings** (that
    is what brings channels), deny notifications and usage reports.
-2. Run `tv/debloat.sh <tv-ip>` again: it turns on Projectivy's accessibility
-   service, which takes the Home button. Check Settings → General →
-   **Bypass current launcher** is on. Settings → Accessibility service →
-   **Enable button remapping** off: with it on, the service takes the remote's
-   Home while the screensaver runs and the screensaver never closes (only Back
-   does). Off, Home closes it and Projectivy still replaces the Google TV home.
+2. Run `tv/debloat.sh <tv-ip>` again: it makes Projectivy the system Home
+   and disables the Google TV launcher (`launcherx`) and `setupwraith`, whose
+   black RecoveryActivity would otherwise take Home. Home then never shows the
+   Google TV home, not even for a moment, and closes the screensaver. Leave
+   Projectivy's accessibility **button remapping** off: it swallows Home while
+   the screensaver runs (only Back closes it).
 3. Gear → **Edit channels**: hide "Watch next"; turn on MEO (Tendências TV,
    Tendências VideoClube) and SmartTube (Subscriptions, Recommended, History),
    each channel's **Visible** switch.
@@ -125,9 +125,11 @@ TV: uninstall Projectivy.
 
 - **Do not uninstall Live TV** (`com.mitv.livetv`): it is the HDMI input
   selector and the Input button. Hide it in the launcher instead.
-- **Do not disable the Google TV launcher** (`launcherx`): Home then opens a
-  black setup screen (`setupwraith/.RecoveryActivity`) that adb cannot disable.
-  `pm enable com.google.android.apps.tv.launcherx` undoes it.
+- **Never disable `launcherx` alone**: Home then opens a black setup screen
+  (`setupwraith/.RecoveryActivity`); disable `setupwraith` with it, as the
+  script does. Shell cannot disable a single activity (SecurityException).
+  Undo: `pm enable com.google.android.apps.tv.launcherx` and the same for
+  `com.google.android.tungsten.setupwraith`.
 - **Apps-only mode** turns off search and voice.
 - Moving an app whose data was on a stick that was later reformatted broke
   Stremio (`AccessDeniedException`); `pm clear` did not fix it, a reinstall did.
