@@ -15,7 +15,7 @@ BLOAT=(
   com.xiaomi.mimusic2 com.mitv.gallery com.mitv.tvhome.mitvplus com.mitv.tvhome.michannel com.xm.webcontent
   com.mitv.tvhome.atv com.mitv.tvhome.oemtab                       # PatchWall
   com.xiaomi.mitv.smartshare com.xiaomi.wfdsinkhelperservice       # Miracast (Chromecast stays)
-  com.xiaomi.mitv.mediaexplorer
+  com.xiaomi.mitv.mediaexplorer com.xiaomi.mitv.tvmanager           # TV Manager: cleaner with Firebase, always running
   com.google.android.marvin.talkback com.google.android.syncadapters.calendar
   com.google.android.tts com.google.android.play.games              # ~280 MB; TTS voices are only used by TalkBack
   com.xiaomi.amazon.alexa com.mitv.milinkservice com.mitv.dream     # Alexa, Mi Link, Mi screensaver (skipped while it is the active one)
@@ -45,8 +45,10 @@ if grep -qx com.spocky.projengmenu <<<"$INSTALLED"; then
   $S cmd package set-home-activity com.spocky.projengmenu/.ui.home.MainActivity >/dev/null
   $S pm disable-user --user 0 com.google.android.tungsten.setupwraith >/dev/null
   $S pm disable-user --user 0 com.google.android.apps.tv.launcherx >/dev/null
+  $S pm clear com.google.android.tungsten.setupwraith >/dev/null; $S pm clear com.google.android.apps.tv.launcherx >/dev/null
   echo "Home: $($S cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -1)"
 fi
 
+$S pm trim-caches 100G   # every app's cache
 $S dumpsys meminfo | grep -E 'Free RAM|Used RAM'
 echo "Manual steps and closing: tv/README.md"

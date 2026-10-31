@@ -81,7 +81,7 @@ Google TV cannot show chosen app channels under the favourites; Projectivy
    each channel's **Visible** switch.
 4. Gear → **Edit categories**: hide Settings, Display, Applications, System,
    About. Inputs (HDMI) and TV apps stay.
-5. Long-press an app in the row → **Hide** (Settings, TV Manager, Live TV,
+5. Long-press an app in the row → **Hide** (Settings, Live TV,
    Play Store) or **Reorder**.
 6. Home button and a reboot must both land in Projectivy.
 
