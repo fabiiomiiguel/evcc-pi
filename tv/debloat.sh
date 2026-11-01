@@ -15,7 +15,7 @@ BLOAT=(
   com.xiaomi.mimusic2 com.mitv.gallery com.mitv.tvhome.mitvplus com.mitv.tvhome.michannel com.xm.webcontent
   com.mitv.tvhome.atv com.mitv.tvhome.oemtab                       # PatchWall
   com.xiaomi.mitv.smartshare com.xiaomi.wfdsinkhelperservice       # Miracast (Chromecast stays)
-  com.xiaomi.mitv.mediaexplorer com.xiaomi.mitv.tvmanager           # TV Manager: cleaner with Firebase, always running
+  com.xiaomi.mitv.mediaexplorer
   com.google.android.marvin.talkback com.google.android.syncadapters.calendar
   com.google.android.tts com.google.android.play.games              # ~280 MB; TTS voices are only used by TalkBack
   com.xiaomi.amazon.alexa com.mitv.milinkservice com.mitv.dream     # Alexa, Mi Link, Mi screensaver (skipped while it is the active one)
@@ -23,7 +23,8 @@ BLOAT=(
 )
 APPS=(com.google.android.youtube.tv com.google.android.youtube.tvmusic com.netflix.ninja com.smartdevice.tv.aircast
       com.spotify.tv.android com.esaba.downloader com.skyshowtime.skyshowtime.google)
-# Never here: com.mitv.livetv (it is the HDMI input selector), com.google.android.katniss (voice),
+# Never here: com.mitv.livetv (it is the HDMI input selector), com.xiaomi.mitv.tvmanager (TV Manager, kept on purpose),
+# com.google.android.katniss (voice),
 # com.google.android.apps.tv.dreamx (the screensaver: without it the TV suspends at screen_off_timeout, 10 min).
 
 $ADB connect "$IP:5555" >/dev/null
