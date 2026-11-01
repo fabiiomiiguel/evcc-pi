@@ -12,9 +12,6 @@ triggers:
     entity_id: [climate.frente, climate.suite, climate.jardim, climate.escritorio, climate.sala]
     from: [cool, dry]
     to: "off"
-    # hOn can flip back to off for a few seconds right after a mode change (2026-11-01 suite dry -> off -> fan_only
-    # fought the solar start); a real stop stays off
-    for: "00:01:00"
     id: dry
   - trigger: time_pattern
     minutes: "/5"
