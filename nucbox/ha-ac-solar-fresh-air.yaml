@@ -30,11 +30,12 @@ triggers:
   - trigger: homeassistant
     event: start
     id: start
-  # waking up: the suite was skipped while asleep
+  # waking up: the suite was skipped while asleep; starts only the suite (2026-11-01 it restarted the sala the
+  # user had turned off)
   - trigger: state
     entity_id: [sensor.iphone_focus_name, sensor.adrianas_iphone_focus_name]
     from: [Sleep, Dormir]
-    id: start
+    id: wake
   - trigger: time_pattern
     minutes: "/5"
     id: tick
@@ -126,7 +127,7 @@ actions:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ trigger.id == 'start' }}"
+            value_template: "{{ trigger.id in ['start', 'wake'] }}"
           - condition: time
             after: "09:00:00"
             before: "15:00:00"
@@ -141,7 +142,7 @@ actions:
           # below setpoint + ~2 C); no room temperature: dry, setpoint unchanged. restore = setpoint to put back
           - variables:
               started: >-
-                {% set ns = namespace(l=[]) %}{% for r in rooms if is_state('climate.' ~ r, 'off') and not (r == 'suite' and suite_asleep) %}{% set t = state_attr('climate.' ~ r, 'current_temperature') | float(none) %}{% set heat = t is not none and t < 22 %}{% set ns.l = ns.l + [{'room': r, 'mode': 'heat' if heat else 'dry', 'target': 22 if heat else (20 if t is not none else none), 'restore': state_attr('climate.' ~ r, 'temperature') | float(none)}] %}{% endfor %}{{ ns.l }}
+                {% set ns = namespace(l=[]) %}{% for r in rooms if is_state('climate.' ~ r, 'off') and not (r == 'suite' and suite_asleep) and (trigger.id != 'wake' or r == 'suite') %}{% set t = state_attr('climate.' ~ r, 'current_temperature') | float(none) %}{% set heat = t is not none and t < 22 %}{% set ns.l = ns.l + [{'room': r, 'mode': 'heat' if heat else 'dry', 'target': 22 if heat else (20 if t is not none else none), 'restore': state_attr('climate.' ~ r, 'temperature') | float(none)}] %}{% endfor %}{{ ns.l }}
           - condition: template
             value_template: "{{ started | count > 0 }}"
           - repeat:
