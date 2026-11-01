@@ -17,6 +17,7 @@ BLOAT=(
   com.xiaomi.mitv.smartshare com.xiaomi.wfdsinkhelperservice       # Miracast (Chromecast stays)
   com.xiaomi.mitv.mediaexplorer
   com.google.android.tvrecommendations                             # Android TV: feeds only the stock launcher
+  com.mitv.videoplayer com.mitv.tvlock                              # Xiaomi video player and TV lock
   com.google.android.marvin.talkback com.google.android.syncadapters.calendar
   com.google.android.tts com.google.android.play.games              # ~280 MB; TTS voices are only used by TalkBack
   com.xiaomi.amazon.alexa com.mitv.milinkservice com.mitv.dream     # Alexa, Mi Link, Mi screensaver (skipped while it is the active one)
