@@ -16,6 +16,7 @@ BLOAT=(
   com.mitv.tvhome.atv com.mitv.tvhome.oemtab                       # PatchWall
   com.xiaomi.mitv.smartshare com.xiaomi.wfdsinkhelperservice       # Miracast (Chromecast stays)
   com.xiaomi.mitv.mediaexplorer
+  com.google.android.tvrecommendations                             # Android TV: feeds only the stock launcher
   com.google.android.marvin.talkback com.google.android.syncadapters.calendar
   com.google.android.tts com.google.android.play.games              # ~280 MB; TTS voices are only used by TalkBack
   com.xiaomi.amazon.alexa com.mitv.milinkservice com.mitv.dream     # Alexa, Mi Link, Mi screensaver (skipped while it is the active one)
@@ -40,13 +41,15 @@ for p in "${PKGS[@]}"; do
   echo "$($S pm uninstall --user 0 "$p" | tr -d '\r')  $p"
 done
 
-# Projectivy becomes the real Home: launcherx (priority 2) outranks a preferred home, and with it
-# disabled setupwraith's black RecoveryActivity (priority 1) would. Shell cannot disable single components.
+# Projectivy becomes the real Home: the stock launcher (priority 2: launcherx on Google TV, tvlauncher
+# on Android TV) outranks a preferred home, and with launcherx disabled setupwraith's black
+# RecoveryActivity (priority 1) would. Shell cannot disable single components.
 if grep -qx com.spocky.projengmenu <<<"$INSTALLED"; then
   $S cmd package set-home-activity com.spocky.projengmenu/.ui.home.MainActivity >/dev/null
-  $S pm disable-user --user 0 com.google.android.tungsten.setupwraith >/dev/null
-  $S pm disable-user --user 0 com.google.android.apps.tv.launcherx >/dev/null
-  $S pm clear com.google.android.tungsten.setupwraith >/dev/null; $S pm clear com.google.android.apps.tv.launcherx >/dev/null
+  for p in com.google.android.tungsten.setupwraith com.google.android.apps.tv.launcherx com.google.android.tvlauncher; do
+    grep -qx "$p" <<<"$INSTALLED" || continue
+    $S pm disable-user --user 0 "$p" >/dev/null; $S pm clear "$p" >/dev/null
+  done
   echo "Home: $($S cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -1)"
 fi
 

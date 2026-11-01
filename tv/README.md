@@ -71,9 +71,10 @@ Google TV cannot show chosen app channels under the favourites; Projectivy
 1. Install and open it. Onboarding: deny photos, **allow TV listings** (that
    is what brings channels), deny notifications and usage reports.
 2. Run `tv/debloat.sh <tv-ip>` again: it makes Projectivy the system Home
-   and disables the Google TV launcher (`launcherx`) and `setupwraith`, whose
-   black RecoveryActivity would otherwise take Home. Home then never shows the
-   Google TV home, not even for a moment, and closes the screensaver. Leave
+   and disables the stock launcher (`launcherx` on Google TV, `tvlauncher` on
+   the Android TV MOOQ0) and `setupwraith`, whose black RecoveryActivity would
+   otherwise take Home. Home then never shows the stock home, not even for a
+   moment, and closes the screensaver. Leave
    Projectivy's accessibility **button remapping** off: it swallows Home while
    the screensaver runs (only Back closes it).
 3. Gear → **Edit channels**: hide "Watch next"; turn on MEO (Tendências TV,
@@ -87,8 +88,9 @@ Google TV cannot show chosen app channels under the favourites; Projectivy
 
 Barba Negra and Stremio publish no channels.
 
-Backup of the finished setup (second TV, 2026-10-29) is outside the repo, on
-the NucBox: `~/backups/tv/projectivy-2026-10-29.ab` (it also holds Firebase IDs
+Backup of the finished setup (living room TV, 2026-11-01, restored on the
+second TV the same day) is outside the repo, on the NucBox:
+`~/backups/tv/projectivy-sala-2026-11-01.ab` (it also holds Firebase IDs
 and crash logs). Taken with `adb backup -f <file> -noapk com.spocky.projengmenu`;
 put it on another TV with Projectivy installed: `adb restore <file>` and confirm
 on screen. Channel rows follow the app name (MEO, Prime Video, SmartTube); no
