@@ -127,6 +127,10 @@ Then Key Mapper → ⋮ → Import → the zip → Replace. On TV the import onl
 ```
 
 Same entry for 193 → `com.stremio.one` and 192 → `com.nathnetwork.barbanegraxc`.
+The Apps button (284, `KEYCODE_ALL_APPS`) opens Android's app list; it maps to
+Projectivy's All apps panel with an `INTENT` action:
+`"data": "intent:#Intent;action=tv.projectivy.ALL_APPS;launchFlags=0x10000000;component=com.spocky.projengmenu/.ui.sidePanels.settingsShortcuts.AllAppsSidePanelActivity;end"`,
+extras `extra_intent_target` = `ACTIVITY` and `extra_intent_description` = any label.
 
 ## Sound (second TV, MiTV-MOOQ0)
 
