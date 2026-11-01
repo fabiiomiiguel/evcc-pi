@@ -55,7 +55,7 @@ actions:
       now_ts: "{{ as_timestamp(now()) | int }}"
       dew_ok: "{{ is_number(state_attr('weather.forecast_casa', 'dew_point')) and state_attr('weather.forecast_casa', 'dew_point') | float < 12 }}"
       suite_asleep: >-
-        {% set ns = namespace(a=false) %}{% for p in ['iphone', 'adrianas_iphone'] %}{% set n = states('sensor.' ~ p ~ '_focus_name') %}{% set ns.a = ns.a or n | lower in ['sleep', 'dormir'] or (n == '' and is_state('binary_sensor.' ~ p ~ '_focus', 'on')) %}{% endfor %}{{ ns.a }}
+        {% set ns = namespace(a=false) %}{% for p in ['iphone', 'adrianas_iphone'] %}{% set n = states('sensor.' ~ p ~ '_focus_name') | trim %}{% set ns.a = ns.a or n | lower in ['sleep', 'dormir'] or (n == '' and is_state('binary_sensor.' ~ p ~ '_focus', 'on')) %}{% endfor %}{{ ns.a }}
   # recorded ACs that are due (or whose mode the user changed); at HA start this recovers a cancelled run
   - if:
       - condition: template
