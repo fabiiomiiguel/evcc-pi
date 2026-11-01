@@ -13,8 +13,11 @@
 # Every 5 min (and on HA start) a recorded AC still in its recorded mode for >= 30 min goes to fan_only with its
 # setpoint restored; at the stop it is restored and turned off. A recorded AC whose mode the user changed is just
 # unrecorded, untouched. cool/auto are never touched; fan_only ACs are turned off at the stop.
-# The suite is skipped while either iPhone is in the Sleep Focus (Companion app sensor <phone>_focus_name, enabled
-# by hand in HA, and the app needs the Focus permission); it starts when that Focus ends, if PV is still > 1500 W.
+# The suite is skipped while either iPhone is in the Sleep Focus: Companion app sensor <phone>_focus_name, filled by
+# the app's Focus Filter (a name per Focus, set on each phone; Sleep is "Sleep"), or a Focus on (<phone>_focus) whose
+# name has not arrived yet: iOS reports a Focus at once but the name only when it lets the app run, and every Focus
+# has a named filter, so an empty name is a late one. It starts when a Focus change leaves neither phone asleep, if
+# PV is still > 1500 W.
 alias: AC solar fresh air
 description: Heat (room < 22 C) or dry 30 min (recorded in input_text, survives restarts) then fan only, fresh air if dew point < 12 C, on the ACs when PV > 1500 W for 10 min, or at 09:00 / HA start with PV already > 1500 W (09:00-15:00); off when PV < 500 W for 30 min or at 16:00
 triggers:
@@ -30,11 +33,10 @@ triggers:
   - trigger: homeassistant
     event: start
     id: start
-  # waking up: the suite was skipped while asleep; starts only the suite (2026-11-01 it restarted the sala the
-  # user had turned off)
+  # a Focus change may end the sleep: starts only the suite (2026-11-01 it restarted the sala the user had turned off)
   - trigger: state
-    entity_id: [sensor.iphone_focus_name, sensor.adrianas_iphone_focus_name]
-    from: [Sleep, Dormir]
+    entity_id: [sensor.iphone_focus_name, sensor.adrianas_iphone_focus_name, binary_sensor.iphone_focus, binary_sensor.adrianas_iphone_focus]
+    to: null
     id: wake
   - trigger: time_pattern
     minutes: "/5"
@@ -52,7 +54,8 @@ actions:
       rooms: [frente, suite, jardim, escritorio, sala]
       now_ts: "{{ as_timestamp(now()) | int }}"
       dew_ok: "{{ is_number(state_attr('weather.forecast_casa', 'dew_point')) and state_attr('weather.forecast_casa', 'dew_point') | float < 12 }}"
-      suite_asleep: "{{ states('sensor.iphone_focus_name') | lower in ['sleep', 'dormir'] or states('sensor.adrianas_iphone_focus_name') | lower in ['sleep', 'dormir'] }}"
+      suite_asleep: >-
+        {% set ns = namespace(a=false) %}{% for p in ['iphone', 'adrianas_iphone'] %}{% set n = states('sensor.' ~ p ~ '_focus_name') %}{% set ns.a = ns.a or n | lower in ['sleep', 'dormir'] or (n == '' and is_state('binary_sensor.' ~ p ~ '_focus', 'on')) %}{% endfor %}{{ ns.a }}
   # recorded ACs that are due (or whose mode the user changed); at HA start this recovers a cancelled run
   - if:
       - condition: template
