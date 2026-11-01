@@ -96,6 +96,38 @@ put it on another TV with Projectivy installed: `adb restore <file>` and confirm
 on screen. Channel rows follow the app name (MEO, Prime Video, SmartTube); no
 setting reorders them.
 
+## Remote app buttons (living room TV)
+
+The YouTube (keycode 190), Netflix (193) and Xiaomi TV+ (192) buttons are
+hard-wired in `MiTvSetupCustomizer` (GlobalKeyReceiver) to their stock apps; no
+setting changes them, and Projectivy only remaps Menu/Back. Key Mapper does it
+(FOSS, `keymapper-<ver>-foss.apk` from GitHub releases): YouTube → SmartTube,
+Netflix → Stremio, TV+ → Barba Negra. The stock action still fires and fails
+silently, since those apps are uninstalled.
+
+```
+adb install keymapper-4.6.2-foss.apk
+adb shell settings put secure enabled_accessibility_services \
+  "$(adb shell settings get secure enabled_accessibility_services):io.github.sds100.keymapper/io.github.sds100.keymapper.system.accessibility.MyAccessibilityService"
+adb shell dumpsys deviceidle whitelist +io.github.sds100.keymapper
+adb shell appops set io.github.sds100.keymapper MANAGE_EXTERNAL_STORAGE allow
+adb push key_maps_botoes.zip /sdcard/Download/   # zip holding data.json
+```
+
+Then Key Mapper → ⋮ → Import → the zip → Replace. On TV the import only lists
+`.zip` files in Downloads. `data.json` (old format v10, migrated on import):
+
+```json
+{"keymap_db_version": 10, "keymap_list": [
+ {"id": 1, "uid": "<uuid>", "isEnabled": true, "flags": 0, "constraintList": [], "constraintMode": 1,
+  "trigger": {"mode": 2, "flags": 0, "extras": [], "keys": [{"keyCode": 190, "clickType": 0, "flags": 0,
+    "deviceId": "io.github.sds100.keymapper.ANY_DEVICE", "uid": "<uuid>"}]},
+  "actionList": [{"type": "APP", "data": "org.smarttube.stable", "flags": 0, "extras": [], "uid": "<uuid>"}]}
+]}
+```
+
+Same entry for 193 → `com.stremio.one` and 192 → `com.nathnetwork.barbanegraxc`.
+
 ## Sound (second TV, MiTV-MOOQ0)
 
 Level 1 was too loud and voices too quiet. No firmware setting lowers the volume
