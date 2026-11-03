@@ -1,0 +1,22 @@
+# Home Assistant automation: who is asleep. Every phone runs the same two iOS Shortcuts personal automations on the
+# Sleep Focus (Run Immediately, Home Assistant app action Fire Event): sleep_on when it turns on, sleep_off when it
+# turns off. The event carries the HA user the phone's app is logged in with, and the person with that user is added
+# to or removed from input_text.sleeping (comma-separated person entity ids, created once through the websocket API).
+# ha-ac-solar-fresh-air.yaml keeps the suite off while a person in that list is home.
+alias: Sleeping
+description: sleep_on / sleep_off events from the phones' Shortcuts add or remove the person in input_text.sleeping
+triggers:
+  - trigger: event
+    event_type: [sleep_on, sleep_off]
+actions:
+  - variables:
+      person: "{{ states.person | selectattr('attributes.user_id', 'eq', trigger.event.context.user_id) | map(attribute='entity_id') | first | default('') }}"
+      asleep: "{{ states('input_text.sleeping').split(',') | reject('eq', '') | reject('eq', person) | list }}"
+  - condition: template
+    value_template: "{{ person != '' }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.sleeping
+    data:
+      value: "{{ (asleep + ([person] if trigger.event.event_type == 'sleep_on' else [])) | join(',') }}"
+mode: queued

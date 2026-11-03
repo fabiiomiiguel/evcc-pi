@@ -13,10 +13,9 @@
 # Every 5 min (and on HA start) a recorded AC still in its recorded mode for >= 30 min goes to fan_only with its
 # setpoint restored; at the stop it is restored and turned off. A recorded AC whose mode the user changed is just
 # unrecorded, untouched. cool/auto are never touched; fan_only ACs are turned off at the stop.
-# The suite is skipped while someone at home is asleep: any input_boolean.sleeping_<phone> on whose
-# device_tracker.<phone> is home. Each phone turns its own on and off from a Shortcuts automation on the Sleep Focus
-# (the Companion app's Focus name only arrives when iOS lets the app run, 2026-11-01); another phone needs only its
-# helper and the two Shortcuts. The suite starts when nobody at home is asleep, if PV is still > 1500 W.
+# The suite is skipped while someone at home is asleep: a person in input_text.sleeping (kept by ha-sleeping.yaml from
+# the phones' Sleep Focus Shortcuts; the Companion app's Focus name only arrives when iOS lets the app run,
+# 2026-11-01) whose person entity is home. The suite starts when nobody at home is asleep, if PV is still > 1500 W.
 alias: AC solar fresh air
 description: Heat (room < 22 C) or dry 30 min (recorded in input_text, survives restarts) then fan only, fresh air if dew point < 12 C, on the ACs when PV > 1500 W for 10 min, or at 09:00 / HA start with PV already > 1500 W (09:00-15:00); off when PV < 500 W for 30 min or at 16:00
 triggers:
@@ -34,7 +33,7 @@ triggers:
     id: start
   # nobody at home asleep any more: starts only the suite (2026-11-01 it restarted the sala the user had turned off)
   - trigger: template
-    value_template: "{% set ns = namespace(a=false) %}{% for b in states.input_boolean if b.object_id.startswith('sleeping_') and b.state == 'on' and is_state('device_tracker.' ~ b.object_id[9:], 'home') %}{% set ns.a = true %}{% endfor %}{{ not ns.a }}"
+    value_template: "{{ states('input_text.sleeping').split(',') | reject('eq', '') | select('is_state', 'home') | list | count == 0 }}"
     id: wake
   - trigger: time_pattern
     minutes: "/5"
@@ -52,7 +51,7 @@ actions:
       rooms: [frente, suite, jardim, escritorio, sala]
       now_ts: "{{ as_timestamp(now()) | int }}"
       dew_ok: "{{ is_number(state_attr('weather.forecast_casa', 'dew_point')) and state_attr('weather.forecast_casa', 'dew_point') | float < 12 }}"
-      suite_asleep: "{% set ns = namespace(a=false) %}{% for b in states.input_boolean if b.object_id.startswith('sleeping_') and b.state == 'on' and is_state('device_tracker.' ~ b.object_id[9:], 'home') %}{% set ns.a = true %}{% endfor %}{{ ns.a }}"
+      suite_asleep: "{{ states('input_text.sleeping').split(',') | reject('eq', '') | select('is_state', 'home') | list | count > 0 }}"
   # recorded ACs that are due (or whose mode the user changed); at HA start this recovers a cancelled run
   - if:
       - condition: template
