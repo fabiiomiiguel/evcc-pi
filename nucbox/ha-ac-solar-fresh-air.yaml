@@ -17,6 +17,8 @@
 # ha-sleeping.yaml from the phones' Sleep Focus Shortcuts; the Companion app's Focus name only arrives when iOS lets
 # the app run, 2026-11-01) whose person entity is home. The start runs when nobody at home is asleep any more, if PV
 # is still > 1500 W.
+# The start runs once a day (date in input_text.ac_solar_started), so waking from a nap or PV crossing 1500 W again
+# after clouds does not restart ACs someone turned off.
 alias: AC solar fresh air
 description: Heat (room < 22 C) or dry 30 min (recorded in input_text, survives restarts) then fan only, fresh air if dew point < 12 C, on the ACs when PV > 1500 W for 10 min, or at 09:00 / HA start with PV already > 1500 W (09:00-15:00); off when PV < 500 W for 30 min or at 16:00
 triggers:
@@ -127,7 +129,7 @@ actions:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ trigger.id == 'start' and not asleep }}"
+            value_template: "{{ trigger.id == 'start' and not asleep and states('input_text.ac_solar_started') != now().date() | string }}"
           - condition: time
             after: "09:00:00"
             before: "15:00:00"
@@ -138,6 +140,11 @@ actions:
           - condition: numeric_state
             entity_id: sensor.evcc_pv_power
             above: 1500
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.ac_solar_started
+            data:
+              value: "{{ now().date() }}"
           # per AC that is off: room < 22 C heats to 22, otherwise dry at 20 so the compressor runs (Haier dry stops
           # below setpoint + ~2 C); no room temperature: dry, setpoint unchanged. restore = setpoint to put back
           - variables:
