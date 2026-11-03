@@ -136,6 +136,8 @@ Notifications off (`appops POST_NOTIFICATION ignore` did not hide them). Never
 `am force-stop` it: Android marks the accessibility service crashed and does not
 rebind it; set `enabled_accessibility_services` without it, then with it again.
 Keys injected with `adb shell input keyevent` bypass it; test with the remote.
+Unlike Projectivy's remapping, it leaves Home closing the screensaver. Start the
+screensaver for a test with `adb shell service call dreams 1` (`2` stops it).
 
 ## Sound (second TV, MiTV-MOOQ0)
 
