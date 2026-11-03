@@ -131,6 +131,11 @@ The Apps button (284, `KEYCODE_ALL_APPS`) opens Android's app list; it maps to
 Projectivy's All apps panel with an `INTENT` action:
 `"data": "intent:#Intent;action=tv.projectivy.ALL_APPS;launchFlags=0x10000000;component=com.spocky.projengmenu/.ui.sidePanels.settingsShortcuts.AllAppsSidePanelActivity;end"`,
 extras `extra_intent_target` = `ACTIVITY` and `extra_intent_description` = any label.
+Its two permanent notifications: TV Settings → Apps → Key Mapper →
+Notifications off (`appops POST_NOTIFICATION ignore` did not hide them). Never
+`am force-stop` it: Android marks the accessibility service crashed and does not
+rebind it; set `enabled_accessibility_services` without it, then with it again.
+Keys injected with `adb shell input keyevent` bypass it; test with the remote.
 
 ## Sound (second TV, MiTV-MOOQ0)
 
@@ -171,6 +176,9 @@ TV: uninstall Projectivy.
 - **Apps-only mode** turns off search and voice.
 - Moving an app whose data was on a stick that was later reformatted broke
   Stremio (`AccessDeniedException`); `pm clear` did not fix it, a reinstall did.
+  MEO hit the same on 2026-11-03 (opens and closes at once, `mkdir failed:
+  EACCES` on its data dir): pull its APKs (`pm path`), `adb uninstall`, then
+  `adb install-multiple -i com.android.vending <apks>`; log in again.
   A second `pm move-package` hung and left the app "frozen" until a reboot.
 - `sm forget <uuid>` clears old storage records; never the stick in use (its
   apps are lost).
