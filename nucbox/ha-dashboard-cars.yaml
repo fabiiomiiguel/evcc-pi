@@ -1,5 +1,5 @@
 # Home Assistant dashboard "Carros" (sidebar, url /dashboard-cars): both Peugeots (stellantis_vehicles, entity ids
-# e208_* and 3008_*, renamed from the VIN on 2026-11-05) side by side with battery, range, charging and a map, then a
+# e208_* and 3008_*, renamed from the VIN on 2026-11-05) side by side with battery, range, charging and a map (e-208 blue, 3008 orange), then a
 # detail view per car (paths car-e208, car-3008: a numeric view path is read as the view index) (trip, 12 V battery, battery health, maintenance). Created once through the websocket API
 # (lovelace/dashboards/create) and saved with lovelace/config/save.
 title: Carros
@@ -109,7 +109,11 @@ views:
             heading: Onde estão
             icon: mdi:map-marker
           - type: map
-            entities: [device_tracker.e208_vehicle, device_tracker.3008_vehicle]
+            entities:
+              - entity: device_tracker.e208_vehicle
+                color: blue
+              - entity: device_tracker.3008_vehicle
+                color: orange
             hours_to_show: 24
             grid_options:
               columns: full
@@ -146,7 +150,9 @@ views:
             entity: sensor.e208_service_battery
             name: Bateria 12 V
           - type: map
-            entities: [device_tracker.e208_vehicle]
+            entities:
+              - entity: device_tracker.e208_vehicle
+                color: blue
             default_zoom: 15
             hours_to_show: 24
             grid_options:
@@ -207,7 +213,9 @@ views:
             entity: sensor.3008_service_battery
             name: Bateria 12 V
           - type: map
-            entities: [device_tracker.3008_vehicle]
+            entities:
+              - entity: device_tracker.3008_vehicle
+                color: orange
             default_zoom: 15
             hours_to_show: 24
             grid_options:
