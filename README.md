@@ -274,7 +274,23 @@ rest:
         device_class: timestamp
         value_template: >-
           {% if value_json.vehicleName == '3008' and value_json.charging and value_json.chargeRemainingDuration > 0 %}{{ (now() + timedelta(seconds=value_json.chargeRemainingDuration)).isoformat() }}{% else %}{{ none }}{% endif %}
+  # power flows for the Overview (W; grid < 0 is export, battery < 0 is charging)
+  - resource: "http://192.168.68.53:7070/api/state?jq={home:.homePower,grid:.grid.power,battery:.battery.power,battery_soc:.battery.soc,charge:.loadpoints[0].chargePower}"
+    scan_interval: 30
+    sensor:
+      - name: evcc home power
+        unique_id: evcc_home_power
+        value_template: "{{ value_json.home }}"
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+      # evcc grid power (.grid), evcc battery power (.battery), evcc charge power (.charge): the same, W;
+      # evcc battery soc (.battery_soc): unit %, device_class battery
 ```
+
+`ha-dashboard-home.yaml` is the "Casa" dashboard (url `dashboard-home`), HA's default panel in place of the
+generated "Visão geral": energy now (those sensors and a 12 h graph), both cars (battery, range, charging, charge end)
+and every AC with the solar automation's toggle; each heading opens the detailed dashboard.
 
 ### Previews of local dev servers
 

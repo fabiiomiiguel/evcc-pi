@@ -1,0 +1,133 @@
+# Home Assistant dashboard "Casa" (url /dashboard-home, the system default panel instead of HA's generated "Visão geral"): energy now (evcc's
+# power flows, sensor.evcc_*: README; grid < 0 is selling, battery < 0 is charging), both cars and the ACs with the solar automation's toggle. Each heading opens
+# the detailed dashboard. Created with lovelace/dashboards/create, saved with lovelace/config/save; the default panel
+# is frontend/set_system_data key core, default_panel: dashboard-home (remove it to get HA's overview back).
+title: Casa
+views:
+  - title: Visão geral
+    path: home
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Energia
+            icon: mdi:solar-power-variant
+            tap_action:
+              action: navigate
+              navigation_path: /energy
+          - type: tile
+            entity: sensor.evcc_pv_power
+            name: Solar
+            icon: mdi:solar-power-variant
+            color: amber
+          - type: tile
+            entity: sensor.evcc_home_power
+            name: Casa
+            icon: mdi:home-lightning-bolt
+          - type: tile
+            entity: sensor.evcc_grid_power
+            name: Rede
+            icon: mdi:transmission-tower
+          - type: tile
+            entity: sensor.evcc_battery_soc
+            name: Bateria da casa
+          - type: tile
+            entity: sensor.evcc_battery_power
+            name: Bateria
+            icon: mdi:home-battery
+          - type: tile
+            entity: sensor.evcc_charge_power
+            name: Wallbox
+            icon: mdi:ev-station
+          - type: history-graph
+            hours_to_show: 12
+            grid_options:
+              columns: full
+            entities:
+              - entity: sensor.evcc_pv_power
+                name: Solar
+              - entity: sensor.evcc_home_power
+                name: Casa
+              - entity: sensor.evcc_charge_power
+                name: Wallbox
+              - entity: sensor.evcc_grid_power
+                name: Rede
+      - type: grid
+        cards:
+          - type: heading
+            heading: Carros
+            icon: mdi:car-multiple
+            tap_action:
+              action: navigate
+              navigation_path: /dashboard-cars/cars
+          - type: tile
+            entity: sensor.e208_battery
+            name: e-208
+            color: blue
+            tap_action:
+              action: navigate
+              navigation_path: /dashboard-cars/car-e208
+          - type: tile
+            entity: sensor.e208_range
+            name: Autonomia
+          - type: tile
+            entity: binary_sensor.e208_battery_charging
+            name: A carregar
+          - type: tile
+            entity: sensor.e208_charge_end
+            name: Fim da carga
+          - type: tile
+            entity: sensor.3008_battery
+            name: "3008"
+            color: orange
+            tap_action:
+              action: navigate
+              navigation_path: /dashboard-cars/car-3008
+          - type: tile
+            entity: sensor.3008_range
+            name: Autonomia
+          - type: tile
+            entity: binary_sensor.3008_battery_charging
+            name: A carregar
+          - type: tile
+            entity: sensor.3008_charge_end
+            name: Fim da carga
+      - type: grid
+        cards:
+          - type: heading
+            heading: Climatização
+            icon: mdi:air-conditioner
+            tap_action:
+              action: navigate
+              navigation_path: /dashboard-climate/climate
+          - type: tile
+            entity: automation.ac_solar_fresh_air
+            name: Arranque solar
+            grid_options:
+              columns: full
+          - type: tile
+            entity: climate.living_room
+            name: Sala
+            state_content: [state, current_temperature]
+          - type: tile
+            entity: climate.office
+            name: Escritório
+            state_content: [state, current_temperature]
+          - type: tile
+            entity: climate.front
+            name: Frente
+            state_content: [state, current_temperature]
+          - type: tile
+            entity: climate.suite
+            name: Suite
+            state_content: [state, current_temperature]
+          - type: tile
+            entity: climate.garden
+            name: Jardim
+            state_content: [state, current_temperature]
+          - type: tile
+            entity: climate.heat_pump
+            name: Bomba de calor
+            state_content: [state, current_temperature]
