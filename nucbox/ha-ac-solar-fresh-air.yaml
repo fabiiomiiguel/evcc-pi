@@ -146,10 +146,15 @@ actions:
             data:
               value: "{{ now().date() }}"
           # per AC that is off: room < 22 C heats to 22, otherwise dry at 20 so the compressor runs (Haier dry stops
-          # below setpoint + ~2 C); no room temperature: dry, setpoint unchanged. restore = setpoint to put back
+          # below setpoint + ~2 C); no room temperature: dry, setpoint unchanged. restore = setpoint to put back.
+          # frente, suite, jardim and escritorio share one multi-split outdoor unit, which only heats or cools (dry is
+          # cooling): a unit asking the other mode beeps and stays idle (2026-11-05 the suite in dry beside three in
+          # heat). They all get one mode: dry if one is already in cool/dry, else heat if one is in heat or an off one
+          # is < 22 C, else dry. The sala is a single split and chooses alone.
           - variables:
+              multi: [frente, suite, jardim, escritorio]
               started: >-
-                {% set ns = namespace(l=[]) %}{% for r in rooms if is_state('climate.' ~ r, 'off') %}{% set t = state_attr('climate.' ~ r, 'current_temperature') | float(none) %}{% set heat = t is not none and t < 22 %}{% set ns.l = ns.l + [{'room': r, 'mode': 'heat' if heat else 'dry', 'target': 22 if heat else (20 if t is not none else none), 'restore': state_attr('climate.' ~ r, 'temperature') | float(none)}] %}{% endfor %}{{ ns.l }}
+                {% set modes = multi | map('regex_replace', '^', 'climate.') | map('states') | list %}{% set ns = namespace(l=[], cold=false) %}{% for r in multi if is_state('climate.' ~ r, 'off') and state_attr('climate.' ~ r, 'current_temperature') | float(99) < 22 %}{% set ns.cold = true %}{% endfor %}{% set multi_heat = 'cool' not in modes and 'dry' not in modes and ('heat' in modes or ns.cold) %}{% for r in rooms if is_state('climate.' ~ r, 'off') %}{% set t = state_attr('climate.' ~ r, 'current_temperature') | float(none) %}{% set heat = multi_heat if r in multi else (t is not none and t < 22) %}{% set ns.l = ns.l + [{'room': r, 'mode': 'heat' if heat else 'dry', 'target': 22 if heat else (20 if t is not none else none), 'restore': state_attr('climate.' ~ r, 'temperature') | float(none)}] %}{% endfor %}{{ ns.l }}
           - condition: template
             value_template: "{{ started | count > 0 }}"
           - repeat:
