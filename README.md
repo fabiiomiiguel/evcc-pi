@@ -238,7 +238,7 @@ for the message to reach the notification centre.
 `ha-ac-solar-fresh-air.yaml` is a Home Assistant automation that, when PV stays above 1500 W for 10 min, or is already
 above it at 09:00 or when HA starts (09:00-15:00), starts the ACs that are off: heat to 22 °C if the room is below
 22 °C, otherwise dry at 20 °C (front, suite, garden and office share one multi-split outdoor unit, which cannot heat and cool at once: they all get one mode, dry if one of them already runs cool or dry, else heat if one runs heat or is below 22 °C, else dry), and records it in `input_text.ac_solar_<room>` (JSON mode, restore, since), so a restart cannot strand an AC. Every 5 min and at HA start each recorded AC still in its mode for 30 min goes to fan only (fan low, silent mode on) with its original setpoint restored; at the stop (PV below 500 W for 30 min or 16:00) a recorded AC is restored and turned off, and the ACs in fan only are turned off. A recorded AC the user changed is just unrecorded. Create the five helpers once (HA websocket `input_text/create`, names `ac_solar_front`, `_suite`, `_garden`, `_office`, `_living_room`, max 255) or in Settings > Helpers > Text. The fresh-air switch is turned on only while the
-outside dew point (`weather.forecast_home`) is below 12 °C. The fan only after the dry dries the coil, which is what smells when left wet. The start runs once a day (`input_text.ac_solar_started`, the date). No AC starts while someone at home is asleep (starting is loud); the start runs when nobody is: `ha-sleeping.yaml` keeps `input_text.sleeping` (person ids, created through the websocket API `input_text/create`) from two identical Shortcuts personal automations on every phone (Sleep Focus on / off, Run Immediately, Home Assistant app action Fire Event `sleep_on` / `sleep_off`); HA knows whose phone it was from the app's login. `ha-ac-coil-dry.yaml` runs an AC that goes from cool or dry to off in fan only (fan low, silent mode on) for 30 min, then off (silent off); it records the start in the same `input_text.ac_solar_<room>` helper, so a restart cannot leave it running. `ha-dashboard-climatete.yaml` is the "Climatização" dashboard (sidebar, created once with the websocket API `lovelace/dashboards/create`, url `dashboard-climate`, then `lovelace/config/save`): the two automations' toggles (off pauses one: nothing starts, changes or stops; back on, the 5-min check catches up on the recorded ACs), PV, dew point, who is asleep, today's start, each AC with mode, setpoint, fan, silent and fresh air, and the heat pump. `ha-dashboard-cars.yaml` is the "Carros" dashboard (url `dashboard-cars`, created the same way): both Peugeots (`e208_*`, `3008_*`, entity ids renamed from the VIN) with battery, range, charging and a map, and a detail view per car.
+outside dew point (`weather.forecast_home`) is below 12 °C. The fan only after the dry dries the coil, which is what smells when left wet. The start runs once a day (`input_text.ac_solar_started`, the date). No AC starts while someone at home is asleep (starting is loud); the start runs when nobody is: `ha-sleeping.yaml` keeps `input_text.sleeping` (person ids, created through the websocket API `input_text/create`) from two identical Shortcuts personal automations on every phone (Sleep Focus on / off, Run Immediately, Home Assistant app action Fire Event `sleep_on` / `sleep_off`); HA knows whose phone it was from the app's login. `ha-ac-coil-dry.yaml` runs an AC that goes from cool or dry to off in fan only (fan low, silent mode on) for 30 min, then off (silent off); it records the start in the same `input_text.ac_solar_<room>` helper, so a restart cannot leave it running. `ha-dashboard-climate.yaml` is the "Climatização" dashboard (sidebar, created once with the websocket API `lovelace/dashboards/create`, url `dashboard-climate`, then `lovelace/config/save`): the two automations' toggles (off pauses one: nothing starts, changes or stops; back on, the 5-min check catches up on the recorded ACs), PV, dew point, who is asleep, today's start, each AC with mode, setpoint, fan, silent and fresh air, and the heat pump. `ha-dashboard-cars.yaml` is the "Carros" dashboard (url `dashboard-cars`, created the same way): both Peugeots (`e208_*`, `3008_*`, entity ids renamed from the VIN) with battery, range, charging (the charge end is evcc's estimate, `sensor.<car>_charge_end` below: the car keeps reporting a stale end time) and a map, and a detail view per car.
 The monthly 56 °C self-clean (`switch.<room>_autolimpeza_56degc`) is not automated: the hOn integration gives no
 duration or completion signal, run it by hand on a sunny day, one AC at a time. Heat/cool are never touched. The solar one reads
 `sensor.evcc_pv_power`, which HA does not have yet: add this to `configuration.yaml`, check the configuration and
@@ -254,6 +254,26 @@ sensor:
     unit_of_measurement: W
     device_class: power
     scan_interval: 60
+```
+
+The "Carros" dashboard's charge end comes from evcc too (at the current charge power; unknown unless that car is
+the one on the wallbox and charging), in the same `configuration.yaml` (reloaded with `rest.reload`):
+
+```yaml
+rest:
+  - resource: http://192.168.68.53:7070/api/state?jq=.loadpoints[0]
+    scan_interval: 60
+    sensor:
+      - name: e208 charge end
+        unique_id: e208_charge_end
+        device_class: timestamp
+        value_template: >-
+          {% if value_json.vehicleName == 'e208' and value_json.charging and value_json.chargeRemainingDuration > 0 %}{{ (now() + timedelta(seconds=value_json.chargeRemainingDuration)).isoformat() }}{% else %}{{ none }}{% endif %}
+      - name: 3008 charge end
+        unique_id: 3008_charge_end
+        device_class: timestamp
+        value_template: >-
+          {% if value_json.vehicleName == '3008' and value_json.charging and value_json.chargeRemainingDuration > 0 %}{{ (now() + timedelta(seconds=value_json.chargeRemainingDuration)).isoformat() }}{% else %}{{ none }}{% endif %}
 ```
 
 ### Previews of local dev servers
