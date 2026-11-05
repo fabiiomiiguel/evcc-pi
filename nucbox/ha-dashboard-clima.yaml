@@ -1,0 +1,177 @@
+# Home Assistant dashboard "Climatização" (sidebar, url /dashboard-clima): the two AC automations with their
+# on/off toggle (off pauses them: nothing starts, changes or stops; turned back on, the 5-min check catches up on the
+# recorded ACs), what they read (PV, dew point, who is asleep, today's start), then each AC and the heat pump.
+# Created once through the websocket API (lovelace/dashboards/create) and saved with lovelace/config/save.
+title: Climatização
+views:
+  - title: Climatização
+    path: clima
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Automação
+          - type: entities
+            grid_options:
+              columns: full
+            entities:
+              - entity: automation.ac_solar_fresh_air
+                name: Arranque solar
+              - entity: automation.ac_coil_dry
+                name: Secar radiador
+              - entity: sensor.evcc_pv_power
+                name: Produção solar
+              - type: attribute
+                entity: weather.forecast_casa
+                attribute: dew_point
+                name: Ponto de orvalho
+                suffix: °C
+              # simple-entity: read-only text, not an input box
+              - type: simple-entity
+                entity: input_text.sleeping
+                name: A dormir
+              - type: simple-entity
+                entity: input_text.ac_solar_started
+                name: Último arranque
+      - type: grid
+        cards:
+          - type: heading
+            heading: Frente
+          - type: tile
+            entity: climate.frente
+            name: Frente
+            grid_options:
+              columns: full
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ["off", heat, dry, cool, fan_only]
+              - type: target-temperature
+              - type: climate-fan-modes
+                style: icons
+                fan_modes: [auto, low, medium, high]
+          - type: tile
+            entity: switch.frente_mudo
+            name: Silencioso
+            tap_action:
+              action: toggle
+          - type: tile
+            entity: switch.frente_ar_fresco
+            name: Ar fresco
+            tap_action:
+              action: toggle
+      - type: grid
+        cards:
+          - type: heading
+            heading: Suite
+          - type: tile
+            entity: climate.suite
+            name: Suite
+            grid_options:
+              columns: full
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ["off", heat, dry, cool, fan_only]
+              - type: target-temperature
+              - type: climate-fan-modes
+                style: icons
+                fan_modes: [auto, low, medium, high]
+          - type: tile
+            entity: switch.suite_mudo
+            name: Silencioso
+            tap_action:
+              action: toggle
+          - type: tile
+            entity: switch.suite_ar_fresco
+            name: Ar fresco
+            tap_action:
+              action: toggle
+      - type: grid
+        cards:
+          - type: heading
+            heading: Jardim
+          - type: tile
+            entity: climate.jardim
+            name: Jardim
+            grid_options:
+              columns: full
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ["off", heat, dry, cool, fan_only]
+              - type: target-temperature
+              - type: climate-fan-modes
+                style: icons
+                fan_modes: [auto, low, medium, high]
+          - type: tile
+            entity: switch.jardim_mudo
+            name: Silencioso
+            tap_action:
+              action: toggle
+          - type: tile
+            entity: switch.jardim_ar_fresco
+            name: Ar fresco
+            tap_action:
+              action: toggle
+      - type: grid
+        cards:
+          - type: heading
+            heading: Escritório
+          - type: tile
+            entity: climate.escritorio
+            name: Escritório
+            grid_options:
+              columns: full
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ["off", heat, dry, cool, fan_only]
+              - type: target-temperature
+              - type: climate-fan-modes
+                style: icons
+                fan_modes: [auto, low, medium, high]
+          - type: tile
+            entity: switch.escritorio_mudo
+            name: Silencioso
+            tap_action:
+              action: toggle
+          - type: tile
+            entity: switch.escritorio_ar_fresco
+            name: Ar fresco
+            tap_action:
+              action: toggle
+      - type: grid
+        cards:
+          - type: heading
+            heading: Sala
+          - type: tile
+            entity: climate.sala
+            name: Sala
+            grid_options:
+              columns: full
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ["off", heat, dry, cool, fan_only]
+              - type: target-temperature
+              - type: climate-fan-modes
+                style: icons
+                fan_modes: [auto, low, medium, high]
+          - type: tile
+            entity: switch.sala_mudo
+            name: Silencioso
+            tap_action:
+              action: toggle
+          - type: tile
+            entity: switch.sala_ar_fresco
+            name: Ar fresco
+            tap_action:
+              action: toggle
+      - type: grid
+        cards:
+          - type: heading
+            heading: Bomba de calor
+          - type: thermostat
+            entity: climate.bomba_calor
+            name: Bomba de calor
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: [heat, auto, "off"]
