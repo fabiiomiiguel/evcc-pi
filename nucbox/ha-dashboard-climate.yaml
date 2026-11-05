@@ -1,11 +1,11 @@
-# Home Assistant dashboard "Climatização" (sidebar, url /dashboard-clima): the two AC automations with their
+# Home Assistant dashboard "Climatização" (sidebar, url /dashboard-climate): the two AC automations with their
 # on/off toggle (off pauses them: nothing starts, changes or stops; turned back on, the 5-min check catches up on the
 # recorded ACs), what they read (PV, dew point, who is asleep, today's start), then each AC and the heat pump.
 # Created once through the websocket API (lovelace/dashboards/create) and saved with lovelace/config/save.
 title: Climatização
 views:
   - title: Climatização
-    path: clima
+    path: climate
     type: sections
     max_columns: 3
     sections:
@@ -24,7 +24,7 @@ views:
               - entity: sensor.evcc_pv_power
                 name: Produção solar
               - type: attribute
-                entity: weather.forecast_casa
+                entity: weather.forecast_home
                 attribute: dew_point
                 name: Ponto de orvalho
                 suffix: °C
@@ -40,7 +40,7 @@ views:
           - type: heading
             heading: Frente
           - type: tile
-            entity: climate.frente
+            entity: climate.front
             name: Frente
             grid_options:
               columns: full
@@ -52,12 +52,12 @@ views:
                 style: icons
                 fan_modes: [auto, low, medium, high]
           - type: tile
-            entity: switch.frente_mudo
+            entity: switch.front_silent
             name: Silencioso
             tap_action:
               action: toggle
           - type: tile
-            entity: switch.frente_ar_fresco
+            entity: switch.front_fresh_air
             name: Ar fresco
             tap_action:
               action: toggle
@@ -78,12 +78,12 @@ views:
                 style: icons
                 fan_modes: [auto, low, medium, high]
           - type: tile
-            entity: switch.suite_mudo
+            entity: switch.suite_silent
             name: Silencioso
             tap_action:
               action: toggle
           - type: tile
-            entity: switch.suite_ar_fresco
+            entity: switch.suite_fresh_air
             name: Ar fresco
             tap_action:
               action: toggle
@@ -92,7 +92,7 @@ views:
           - type: heading
             heading: Jardim
           - type: tile
-            entity: climate.jardim
+            entity: climate.garden
             name: Jardim
             grid_options:
               columns: full
@@ -104,12 +104,12 @@ views:
                 style: icons
                 fan_modes: [auto, low, medium, high]
           - type: tile
-            entity: switch.jardim_mudo
+            entity: switch.garden_silent
             name: Silencioso
             tap_action:
               action: toggle
           - type: tile
-            entity: switch.jardim_ar_fresco
+            entity: switch.garden_fresh_air
             name: Ar fresco
             tap_action:
               action: toggle
@@ -118,7 +118,7 @@ views:
           - type: heading
             heading: Escritório
           - type: tile
-            entity: climate.escritorio
+            entity: climate.office
             name: Escritório
             grid_options:
               columns: full
@@ -130,12 +130,12 @@ views:
                 style: icons
                 fan_modes: [auto, low, medium, high]
           - type: tile
-            entity: switch.escritorio_mudo
+            entity: switch.office_silent
             name: Silencioso
             tap_action:
               action: toggle
           - type: tile
-            entity: switch.escritorio_ar_fresco
+            entity: switch.office_fresh_air
             name: Ar fresco
             tap_action:
               action: toggle
@@ -144,7 +144,7 @@ views:
           - type: heading
             heading: Sala
           - type: tile
-            entity: climate.sala
+            entity: climate.living_room
             name: Sala
             grid_options:
               columns: full
@@ -156,12 +156,12 @@ views:
                 style: icons
                 fan_modes: [auto, low, medium, high]
           - type: tile
-            entity: switch.sala_mudo
+            entity: switch.living_room_silent
             name: Silencioso
             tap_action:
               action: toggle
           - type: tile
-            entity: switch.sala_ar_fresco
+            entity: switch.living_room_fresh_air
             name: Ar fresco
             tap_action:
               action: toggle
@@ -170,7 +170,7 @@ views:
           - type: heading
             heading: Bomba de calor
           - type: thermostat
-            entity: climate.bomba_calor
+            entity: climate.heat_pump
             name: Bomba de calor
             features:
               - type: climate-hvac-modes

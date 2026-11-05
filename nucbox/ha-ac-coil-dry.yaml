@@ -9,7 +9,7 @@ alias: AC coil dry
 description: cool/dry -> off runs fan_only for 30 min (recorded in input_text, survives restarts), then off
 triggers:
   - trigger: state
-    entity_id: [climate.frente, climate.suite, climate.jardim, climate.escritorio, climate.sala]
+    entity_id: [climate.front, climate.suite, climate.garden, climate.office, climate.living_room]
     from: [cool, dry]
     to: "off"
     id: dry
@@ -39,7 +39,7 @@ actions:
               fan_mode: low
           - action: switch.turn_on
             target:
-              entity_id: "{{ trigger.entity_id | replace('climate.', 'switch.') }}_mudo"
+              entity_id: "{{ trigger.entity_id | replace('climate.', 'switch.') }}_silent"
             continue_on_error: true
           - action: input_text.set_value
             target:
@@ -51,7 +51,7 @@ actions:
             value_template: "{{ trigger.id == 'tick' }}"
         sequence:
           - repeat:
-              for_each: [frente, suite, jardim, escritorio, sala]
+              for_each: [front, suite, garden, office, living_room]
               sequence:
                 - variables:
                     rec: "{{ states('input_text.ac_solar_' ~ repeat.item) | from_json({}) }}"
@@ -65,7 +65,7 @@ actions:
                             entity_id: "climate.{{ repeat.item }}"
                         - action: switch.turn_off
                           target:
-                            entity_id: "switch.{{ repeat.item }}_mudo"
+                            entity_id: "switch.{{ repeat.item }}_silent"
                           continue_on_error: true
                         - action: input_text.set_value
                           target:

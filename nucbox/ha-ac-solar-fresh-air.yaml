@@ -1,12 +1,12 @@
 # Home Assistant automation: while the solar panels produce, the ACs that are off dehumidify or heat for 30 min,
 # then run fan_only for the rest of the window so the coil dries (a wet coil is what smells). Per AC: room < 22 C
 # heats to 22, otherwise dry at 20 (so the compressor runs), no room temperature dry unchanged; after 30 min the
-# AC goes to fan_only and its setpoint is restored. Fresh air (switch.<room>_ar_fresco) is switched on only when
-# weather.forecast_casa dew_point is below 12 C (checked at start and again at fan_only, where it is also switched
+# AC goes to fan_only and its setpoint is restored. Fresh air (switch.<room>_fresh_air) is switched on only when
+# weather.forecast_home dew_point is below 12 C (checked at start and again at fan_only, where it is also switched
 # off otherwise). Needs sensor.evcc_pv_power (W), evcc's /api/state pvPower: see the README, HA has no
 # evcc integration, so that sensor is created once by hand. Without it the start never fires; only the
 # 16:00 stop works.
-# Silent mode (switch.<room>_mudo) is on in fan_only, off in heat/dry and off at the stop. hOn resets the AC's
+# Silent mode (switch.<room>_silent) is on in fan_only, off in heat/dry and off at the stop. hOn resets the AC's
 # switches on a mode change, so fresh air and silent are always set after the mode.
 # What the automation started is recorded outside the run, in input_text.ac_solar_<room> (JSON mode, restore, since;
 # created once through the websocket API: see the README), so a restart or reload cannot strand an AC in heat/dry.
@@ -51,9 +51,9 @@ triggers:
     id: stop
 actions:
   - variables:
-      rooms: [frente, suite, jardim, escritorio, sala]
+      rooms: [front, suite, garden, office, living_room]
       now_ts: "{{ as_timestamp(now()) | int }}"
-      dew_ok: "{{ is_number(state_attr('weather.forecast_casa', 'dew_point')) and state_attr('weather.forecast_casa', 'dew_point') | float < 12 }}"
+      dew_ok: "{{ is_number(state_attr('weather.forecast_home', 'dew_point')) and state_attr('weather.forecast_home', 'dew_point') | float < 12 }}"
       asleep: "{{ states('input_text.sleeping').split(',') | reject('eq', '') | select('is_state', 'home') | list | count > 0 }}"
   # recorded ACs that are due (or whose mode the user changed); at HA start this recovers a cancelled run
   - if:
@@ -90,11 +90,11 @@ actions:
                       data:
                         fan_mode: low  # quiet: runs for hours
                     # fresh air and silent after the mode change: hOn resets the AC's switches on a mode change.
-                    # Fresh air before silent: the sala turns fresh air back off when it is switched on with silent
+                    # Fresh air before silent: the living room turns fresh air back off when it is switched on with silent
                     # already on (2026-11-05)
                     - if:
                         - condition: template
-                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
+                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_fresh_air') }}"
                       then:
                         - if:
                             - condition: template
@@ -102,18 +102,18 @@ actions:
                           then:
                             - action: switch.turn_on
                               target:
-                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                                entity_id: "switch.{{ repeat.item }}_fresh_air"
                           else:
                             - action: switch.turn_off
                               target:
-                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                                entity_id: "switch.{{ repeat.item }}_fresh_air"
                     - if:
                         - condition: template
-                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_silent') }}"
                       then:
                         - action: switch.turn_on
                           target:
-                            entity_id: "switch.{{ repeat.item }}_mudo"
+                            entity_id: "switch.{{ repeat.item }}_silent"
                     - action: input_text.set_value
                       target:
                         entity_id: "input_text.ac_solar_{{ repeat.item }}"
@@ -149,12 +149,12 @@ actions:
               value: "{{ now().date() }}"
           # per AC that is off: room < 22 C heats to 22, otherwise dry at 20 so the compressor runs (Haier dry stops
           # below setpoint + ~2 C); no room temperature: dry, setpoint unchanged. restore = setpoint to put back.
-          # frente, suite, jardim and escritorio share one multi-split outdoor unit, which only heats or cools (dry is
+          # front, suite, garden and office share one multi-split outdoor unit, which only heats or cools (dry is
           # cooling): a unit asking the other mode beeps and stays idle (2026-11-05 the suite in dry beside three in
           # heat). They all get one mode: dry if one is already in cool/dry, else heat if one is in heat or an off one
-          # is < 22 C, else dry. The sala is a single split and chooses alone.
+          # is < 22 C, else dry. The living room is a single split and chooses alone.
           - variables:
-              multi: [frente, suite, jardim, escritorio]
+              multi: [front, suite, garden, office]
               started: >-
                 {% set modes = multi | map('regex_replace', '^', 'climate.') | map('states') | list %}{% set ns = namespace(l=[], cold=false) %}{% for r in multi if is_state('climate.' ~ r, 'off') and state_attr('climate.' ~ r, 'current_temperature') | float(99) < 22 %}{% set ns.cold = true %}{% endfor %}{% set multi_heat = 'cool' not in modes and 'dry' not in modes and ('heat' in modes or ns.cold) %}{% for r in rooms if is_state('climate.' ~ r, 'off') %}{% set t = state_attr('climate.' ~ r, 'current_temperature') | float(none) %}{% set heat = multi_heat if r in multi else (t is not none and t < 22) %}{% set ns.l = ns.l + [{'room': r, 'mode': 'heat' if heat else 'dry', 'target': 22 if heat else (20 if t is not none else none), 'restore': state_attr('climate.' ~ r, 'temperature') | float(none)}] %}{% endfor %}{{ ns.l }}
           - condition: template
@@ -185,18 +185,18 @@ actions:
                 # no silent mode in heat/dry: the compressor needs the airflow
                 - if:
                     - condition: template
-                      value_template: "{{ has_value('switch.' ~ repeat.item.room ~ '_mudo') }}"
+                      value_template: "{{ has_value('switch.' ~ repeat.item.room ~ '_silent') }}"
                   then:
                     - action: switch.turn_off
                       target:
-                        entity_id: "switch.{{ repeat.item.room }}_mudo"
+                        entity_id: "switch.{{ repeat.item.room }}_silent"
                 - if:
                     - condition: template
-                      value_template: "{{ dew_ok and has_value('switch.' ~ repeat.item.room ~ '_ar_fresco') }}"
+                      value_template: "{{ dew_ok and has_value('switch.' ~ repeat.item.room ~ '_fresh_air') }}"
                   then:
                     - action: switch.turn_on
                       target:
-                        entity_id: "switch.{{ repeat.item.room }}_ar_fresco"
+                        entity_id: "switch.{{ repeat.item.room }}_fresh_air"
                 - action: input_text.set_value
                   target:
                     entity_id: "input_text.ac_solar_{{ repeat.item.room }}"
@@ -231,18 +231,18 @@ actions:
                             entity_id: "climate.{{ repeat.item }}"
                         - if:
                             - condition: template
-                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_fresh_air') }}"
                           then:
                             - action: switch.turn_off
                               target:
-                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                                entity_id: "switch.{{ repeat.item }}_fresh_air"
                         - if:
                             - condition: template
-                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_silent') }}"
                           then:
                             - action: switch.turn_off
                               target:
-                                entity_id: "switch.{{ repeat.item }}_mudo"
+                                entity_id: "switch.{{ repeat.item }}_silent"
                         - action: input_text.set_value
                           target:
                             entity_id: "input_text.ac_solar_{{ repeat.item }}"
@@ -257,18 +257,18 @@ actions:
                             entity_id: "climate.{{ repeat.item }}"
                         - if:
                             - condition: template
-                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_fresh_air') }}"
                           then:
                             - action: switch.turn_off
                               target:
-                                entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                                entity_id: "switch.{{ repeat.item }}_fresh_air"
                         - if:
                             - condition: template
-                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                              value_template: "{{ has_value('switch.' ~ repeat.item ~ '_silent') }}"
                           then:
                             - action: switch.turn_off
                               target:
-                                entity_id: "switch.{{ repeat.item }}_mudo"
+                                entity_id: "switch.{{ repeat.item }}_silent"
                         - action: input_text.set_value
                           target:
                             entity_id: "input_text.ac_solar_{{ repeat.item }}"
