@@ -89,14 +89,9 @@ actions:
                         entity_id: "climate.{{ repeat.item }}"
                       data:
                         fan_mode: low  # quiet: runs for hours
-                    # silent mode after the mode change: hOn resets the AC's switches on a mode change
-                    - if:
-                        - condition: template
-                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
-                      then:
-                        - action: switch.turn_on
-                          target:
-                            entity_id: "switch.{{ repeat.item }}_mudo"
+                    # fresh air and silent after the mode change: hOn resets the AC's switches on a mode change.
+                    # Fresh air before silent: the sala turns fresh air back off when it is switched on with silent
+                    # already on (2026-11-05)
                     - if:
                         - condition: template
                           value_template: "{{ has_value('switch.' ~ repeat.item ~ '_ar_fresco') }}"
@@ -112,6 +107,13 @@ actions:
                             - action: switch.turn_off
                               target:
                                 entity_id: "switch.{{ repeat.item }}_ar_fresco"
+                    - if:
+                        - condition: template
+                          value_template: "{{ has_value('switch.' ~ repeat.item ~ '_mudo') }}"
+                      then:
+                        - action: switch.turn_on
+                          target:
+                            entity_id: "switch.{{ repeat.item }}_mudo"
                     - action: input_text.set_value
                       target:
                         entity_id: "input_text.ac_solar_{{ repeat.item }}"
