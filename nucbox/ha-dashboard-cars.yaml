@@ -1,0 +1,238 @@
+# Home Assistant dashboard "Carros" (sidebar, url /dashboard-cars): both Peugeots (stellantis_vehicles, entity ids
+# e208_* and 3008_*, renamed from the VIN on 2026-11-05) side by side with battery, range, charging and a map, then a
+# detail view per car (paths car-e208, car-3008: a numeric view path is read as the view index) (trip, 12 V battery, battery health, maintenance). Created once through the websocket API
+# (lovelace/dashboards/create) and saved with lovelace/config/save.
+title: Carros
+views:
+  - title: Carros
+    path: cars
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: e-208
+            icon: mdi:car-electric
+            tap_action:
+              action: navigate
+              navigation_path: car-e208
+          - type: gauge
+            entity: sensor.e208_battery
+            name: Bateria
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              red: 0
+              yellow: 20
+              green: 50
+            grid_options:
+              columns: 6
+              rows: auto
+          - type: gauge
+            entity: sensor.e208_range
+            name: Autonomia
+            min: 0
+            max: 350
+            grid_options:
+              columns: 6
+              rows: auto
+          - type: tile
+            entity: binary_sensor.e208_battery_plugged
+            name: Wallbox
+          - type: tile
+            entity: binary_sensor.e208_battery_charging
+            name: A carregar
+          - type: tile
+            entity: sensor.e208_battery_charging_rate
+            name: Carga (km/h)
+          - type: tile
+            entity: sensor.e208_battery_charging_end
+            name: Fim da carga
+          - type: tile
+            entity: device_tracker.e208_vehicle
+            name: Localização
+          - type: tile
+            entity: sensor.e208_mileage
+            name: Quilómetros
+      - type: grid
+        cards:
+          - type: heading
+            heading: 3008
+            icon: mdi:car-electric
+            tap_action:
+              action: navigate
+              navigation_path: car-3008
+          - type: gauge
+            entity: sensor.3008_battery
+            name: Bateria
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              red: 0
+              yellow: 20
+              green: 50
+            grid_options:
+              columns: 6
+              rows: auto
+          - type: gauge
+            entity: sensor.3008_range
+            name: Autonomia
+            min: 0
+            max: 700
+            grid_options:
+              columns: 6
+              rows: auto
+          - type: tile
+            entity: binary_sensor.3008_battery_plugged
+            name: Wallbox
+          - type: tile
+            entity: binary_sensor.3008_battery_charging
+            name: A carregar
+          - type: tile
+            entity: sensor.3008_battery_charging_rate
+            name: Carga (km/h)
+          - type: tile
+            entity: sensor.3008_battery_charging_end
+            name: Fim da carga
+          - type: tile
+            entity: device_tracker.3008_vehicle
+            name: Localização
+          - type: tile
+            entity: sensor.3008_mileage
+            name: Quilómetros
+      - type: grid
+        cards:
+          - type: heading
+            heading: Onde estão
+            icon: mdi:map-marker
+          - type: map
+            entities: [device_tracker.e208_vehicle, device_tracker.3008_vehicle]
+            hours_to_show: 24
+            grid_options:
+              columns: full
+              rows: 8
+  - title: e-208
+    path: car-e208
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Carro
+            icon: mdi:car-electric
+          - type: tile
+            entity: sensor.e208_temperature
+            name: Temperatura exterior
+          - type: tile
+            entity: binary_sensor.e208_preconditioning
+            name: Pré-climatização
+          - type: tile
+            entity: sensor.e208_last_trip
+            name: Última viagem
+          - type: tile
+            entity: sensor.e208_last_charge
+            name: Última carga
+          - type: tile
+            entity: sensor.e208_battery_charging_type
+            name: Tipo de carga
+          - type: tile
+            entity: sensor.e208_driving_behavior
+            name: Condução
+          - type: tile
+            entity: sensor.e208_service_battery
+            name: Bateria 12 V
+          - type: map
+            entities: [device_tracker.e208_vehicle]
+            default_zoom: 15
+            hours_to_show: 24
+            grid_options:
+              columns: full
+              rows: 5
+      - type: grid
+        cards:
+          - type: heading
+            heading: Saúde e manutenção
+            icon: mdi:wrench
+          - type: tile
+            entity: sensor.e208_battery_soh_capacity
+            name: Saúde da bateria (capacidade)
+          - type: tile
+            entity: sensor.e208_battery_soh_resistance
+            name: Saúde da bateria (resistência)
+          - type: tile
+            entity: sensor.e208_battery_capacity
+            name: Capacidade
+          - type: tile
+            entity: sensor.e208_battery_residual
+            name: Energia restante
+          - type: tile
+            entity: sensor.e208_mileage_before_maintenance
+            name: Km até à revisão
+          - type: tile
+            entity: sensor.e208_days_before_maintenance
+            name: Dias até à revisão
+  - title: 3008
+    path: car-3008
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Carro
+            icon: mdi:car-electric
+          - type: tile
+            entity: sensor.3008_temperature
+            name: Temperatura exterior
+          - type: tile
+            entity: binary_sensor.3008_preconditioning
+            name: Pré-climatização
+          - type: tile
+            entity: sensor.3008_last_trip
+            name: Última viagem
+          - type: tile
+            entity: sensor.3008_last_charge
+            name: Última carga
+          - type: tile
+            entity: sensor.3008_battery_charging_type
+            name: Tipo de carga
+          - type: tile
+            entity: sensor.3008_driving_behavior
+            name: Condução
+          - type: tile
+            entity: sensor.3008_service_battery
+            name: Bateria 12 V
+          - type: map
+            entities: [device_tracker.3008_vehicle]
+            default_zoom: 15
+            hours_to_show: 24
+            grid_options:
+              columns: full
+              rows: 5
+      - type: grid
+        cards:
+          - type: heading
+            heading: Saúde e manutenção
+            icon: mdi:wrench
+          - type: tile
+            entity: sensor.3008_battery_soh_capacity
+            name: Saúde da bateria (capacidade)
+          - type: tile
+            entity: sensor.3008_battery_soh_resistance
+            name: Saúde da bateria (resistência)
+          - type: tile
+            entity: sensor.3008_battery_capacity
+            name: Capacidade
+          - type: tile
+            entity: sensor.3008_battery_residual
+            name: Energia restante
+          - type: tile
+            entity: sensor.3008_mileage_before_maintenance
+            name: Km até à revisão
+          - type: tile
+            entity: sensor.3008_days_before_maintenance
+            name: Dias até à revisão
