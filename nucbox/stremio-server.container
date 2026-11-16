@@ -2,13 +2,20 @@
 # Rootless podman quadlet: ln -s "$PWD/stremio-server.container" ~/.config/containers/systemd/ && systemctl --user daemon-reload && systemctl --user start stremio-server
 # LAN only: sudo ufw allow from 192.168.68.0/24 to any port 11470 proto tcp comment 'Stremio server'
 # HTTPS (the iPad/web app needs it): ./caddy-stremio.sh puts https://stremio.CADDY_DOMAIN in front of it.
+# Pinned (no AutoUpdate): version 4.22.5, the image the TV was tested with; `latest` could change under it on any
+# pull. Upgrade by hand: pull the new digest, put it here, restart, re-run the checks in tv/README.md.
 [Container]
-Image=docker.io/stremio/server:latest
+Image=docker.io/stremio/server@sha256:d74f18a71f934c23ff137beefbeaea760e51a204a38cae078d0d1366a8a8b63a
 PublishPort=11470:11470
+# AIOStreams' playback links point at this host's own HTTPS (Caddy); from inside the container the host's
+# LAN IP refuses, so the hostname goes to the host gateway (iPad transcodes failed with "Probe process exited").
+AddHost=aiostreams.casa.byfc.pt:host-gateway
 Volume=%h/.stremio-server:/root/.stremio-server
 
 [Service]
 Restart=always
+CPUWeight=20
+IOWeight=20
 
 [Install]
 WantedBy=default.target

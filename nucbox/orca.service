@@ -5,7 +5,11 @@ After=network-online.target
 [Service]
 # claude lives in ~/.local/bin; the agents run with this PATH and this home; claude-wrap picks the account
 Environment=PATH=%h/.local/claude-wrap:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/orca-ide serve --port @ORCA_PORT@ --pairing-address wss://@ORCA_HOST@
+# current is flipped by orca-update.sh. --supervise restarts the server on a crash. KillMode=process:
+# stopping the unit kills only the supervisor, the terminal daemon (its own scope) and the agents in it keep running.
+ExecStart=%h/.local/opt/orca/current/bin/orca-ide serve --supervise --port @ORCA_PORT@ --pairing-address wss://@ORCA_HOST@
+KillMode=process
+TimeoutStopSec=90
 Restart=on-failure
 RestartSec=10
 

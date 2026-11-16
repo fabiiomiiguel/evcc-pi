@@ -1,0 +1,108 @@
+# Home Assistant automation: the grid has been down for input_number.grid_outage_shed_delay minutes (default 10) and the
+# house battery is supplying the house: turn off the five ACs and the heat pump, and pause the two automations that
+# start or run them (ac_solar_fresh_air, ac_coil_dry), so the 5 kWh battery is kept for what matters in a storm. When the grid is
+# back the automations this one paused are turned on again (the ACs and the heat pump stay off), and the phone is told
+# both times.
+# binary_sensor.grid_outage is a command_line sensor (configuration.yaml, every 60 s) running
+# inverter_discharge_limit.py --grid: the EMMA's grid voltage (unit 0, register 31639) below 100 V is an outage; a
+# failed read leaves the sensor unknown, which never sheds. Both the outage and the battery discharge (evcc battery
+# power > 100 W) are needed, and whichever comes second fires the automation (the battery may only start to
+# supply the house in the evening).
+# The paused automations are recorded in input_text.grid_outage_disabled (JSON list, created through the websocket
+# API input_text/create, empty = not shedding), only those that were on, so one the user had already paused stays off.
+# ac_coil_dry is paused before the ACs are turned off: otherwise their cool/dry -> off would start the 30 min fan run.
+# The ACs only get turned off if they are not off already.
+alias: Grid outage load shedding
+description: grid down for X min (input_number.grid_outage_shed_delay) and on battery -> ACs and heat pump off, their automations paused; grid back -> automations on again
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.grid_outage
+    to: "on"
+    for:
+      minutes: "{{ states('input_number.grid_outage_shed_delay') | int(10) }}"
+    id: shed
+  - trigger: numeric_state
+    entity_id: sensor.evcc_battery_power
+    above: 100
+    for: "00:01:00"
+    id: shed
+  - trigger: state
+    entity_id: binary_sensor.grid_outage
+    to: "off"
+    id: restore
+actions:
+  - variables:
+      paused_automations: [automation.ac_solar_fresh_air, automation.ac_coil_dry]
+      climates: [climate.living_room, climate.office, climate.front, climate.suite, climate.garden, climate.heat_pump]
+      shedding: "{{ states('input_text.grid_outage_disabled').startswith('[') }}"
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'shed' and not shedding }}"
+          - condition: state
+            entity_id: binary_sensor.grid_outage
+            state: "on"
+            for:
+              minutes: "{{ states('input_number.grid_outage_shed_delay') | int(10) }}"
+          - condition: numeric_state
+            entity_id: sensor.evcc_battery_power
+            above: 100
+        sequence:
+          - variables:
+              was_on: "{{ paused_automations | select('is_state', 'on') | list }}"
+              was_running: "{{ climates | reject('is_state', 'off') | list }}"
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.grid_outage_disabled
+            data:
+              value: "{{ was_on | to_json }}"
+          - if:
+              - condition: template
+                value_template: "{{ was_on | count > 0 }}"
+            then:
+              - action: automation.turn_off
+                target:
+                  entity_id: "{{ was_on }}"
+                data:
+                  stop_actions: true
+          - if:
+              - condition: template
+                value_template: "{{ was_running | count > 0 }}"
+            then:
+              - action: climate.turn_off
+                target:
+                  entity_id: "{{ was_running }}"
+                continue_on_error: true
+          - action: notify.send_message
+            target:
+              entity_id: notify.iphone
+            data:
+              title: Falha de luz
+              message: >-
+                Sem luz há mais de {{ states('input_number.grid_outage_shed_delay') | int(10) }} min e a casa está na bateria
+                ({{ states('sensor.evcc_battery_soc') | int(0) }} %): ar condicionado e aquecimento desligados, automações de clima em pausa.
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'restore' and shedding }}"
+        sequence:
+          - variables:
+              to_restore: "{{ states('input_text.grid_outage_disabled') | from_json([]) }}"
+          - if:
+              - condition: template
+                value_template: "{{ to_restore | count > 0 }}"
+            then:
+              - action: automation.turn_on
+                target:
+                  entity_id: "{{ to_restore }}"
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.grid_outage_disabled
+            data:
+              value: ""
+          - action: notify.send_message
+            target:
+              entity_id: notify.iphone
+            data:
+              title: A luz voltou
+              message: Automações de clima reativadas. O ar condicionado e o aquecimento ficam desligados até os ligares.
+mode: single

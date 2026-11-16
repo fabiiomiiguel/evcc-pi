@@ -1,0 +1,9 @@
+# Daily AIOStreams backup (aiostreams-backup.py, tv/README.md). Started by aiostreams-backup.timer.
+# ln -s "$PWD"/aiostreams-backup.{service,timer} ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now aiostreams-backup.timer
+[Unit]
+Description=AIOStreams config backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/Projects/personal/evcc-pi/nucbox/aiostreams-backup.py
+Nice=19

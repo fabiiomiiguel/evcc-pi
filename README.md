@@ -175,9 +175,11 @@ challenge and puts a login page in front of Everon. Values come from the same `.
 ./nucbox/push.sh                  # Mac: copy nucbox/ to ~/nucbox on the box, with only those variables
 # then on the box, in ~/nucbox:
 ./caddy-install.sh                # Caddy modules, environment file, service drop-in, baseline Caddyfile
-./install-orca.sh [orca.deb]      # installs orca-ide from the .deb if missing; renders orca.service, linger, starts it
+./install-orca.sh                 # Orca server tarball (orca-update.sh --install); renders orca.service + update timer, linger, starts them
 ./caddy-orca.sh                   # adds the @orca site to the live Caddyfile (--print: render only)
 ./caddy-stremio.sh                # adds the @stremio site (https://stremio.CADDY_DOMAIN, for the iPad) (--print: render only)
+./caddy-aiostreams.sh             # adds the @aiostreams site (https://aiostreams.CADDY_DOMAIN, the Stremio addon) (--print: render only)
+./caddy-workstation.sh            # adds the @workstation site (https://workstation.CADDY_DOMAIN, the ffv0 work dashboard) (--print: render only)
 ./caddy-everon-login.sh           # adds the login-protected @everon site (--print: render only)
 ./caddy-previews.sh               # https://<port>.PREVIEW_DOMAIN -> 127.0.0.1:<port>, tailnet + LAN, shared login
 ./caddy-previews.sh --rotate-key  # new previews key: ends every preview session (Everon's stay)
@@ -241,20 +243,9 @@ above it at 09:00 or when HA starts (09:00-15:00), starts the ACs that are off: 
 outside dew point (`weather.forecast_home`) is below 12 °C. The fan only after the dry dries the coil, which is what smells when left wet. The start runs once a day (`input_text.ac_solar_started`, the date). No AC starts while someone at home is asleep (starting is loud); the start runs when nobody is: `ha-sleeping.yaml` keeps `input_text.sleeping` (person ids, created through the websocket API `input_text/create`) from two identical Shortcuts personal automations on every phone (Sleep Focus on / off, Run Immediately, Home Assistant app action Fire Event `sleep_on` / `sleep_off`); HA knows whose phone it was from the app's login. `ha-ac-coil-dry.yaml` runs an AC that goes from cool or dry to off in fan only (fan low, silent mode on) for 30 min, then off (silent off); it records the start in the same `input_text.ac_solar_<room>` helper, so a restart cannot leave it running. `ha-dashboard-climate.yaml` is the "Climatização" dashboard (sidebar, created once with the websocket API `lovelace/dashboards/create`, url `dashboard-climate`, then `lovelace/config/save`): the two automations' toggles (off pauses one: nothing starts, changes or stops; back on, the 5-min check catches up on the recorded ACs), PV, dew point, who is asleep, today's start, each AC with mode, setpoint, fan, silent and fresh air, and the heat pump. `ha-dashboard-cars.yaml` is the "Carros" dashboard (url `dashboard-cars`, created the same way): both Peugeots (`e208_*`, `3008_*`, entity ids renamed from the VIN) with battery, range, charging (the charge end is evcc's estimate, `sensor.<car>_charge_end` below: the car keeps reporting a stale end time) and a map, and a detail view per car.
 The monthly 56 °C self-clean (`switch.<room>_autolimpeza_56degc`) is not automated: the hOn integration gives no
 duration or completion signal, run it by hand on a sunny day, one AC at a time. Heat/cool are never touched. The solar one reads
-`sensor.evcc_pv_power`, which HA does not have yet: add this to `configuration.yaml`, check the configuration and
-restart HA (evcc answers on `192.168.68.53:7070`):
-
-```yaml
-sensor:
-  - platform: rest
-    name: evcc PV power
-    unique_id: evcc_pv_power
-    resource: http://192.168.68.53:7070/api/state?jq=.pvPower
-    value_template: "{{ value | float(0) }}"
-    unit_of_measurement: W
-    device_class: power
-    scan_interval: 60
-```
+`sensor.evcc_pv_power` (evcc's `pvPower`, W), the first sensor of the 10 s evcc resource in the `rest:` block below:
+it shares the request with home power and the charging flag, so `house_battery_discharge_limit` never mixes
+a PV value from one evcc cycle with a home value from another (evcc answers on `192.168.68.53:7070`).
 
 The "Carros" dashboard's charge end comes from evcc too (at the current charge power; unknown unless that car is
 the one on the wallbox and charging), in the same `configuration.yaml` (reloaded with `rest.reload`):
@@ -274,10 +265,18 @@ rest:
         device_class: timestamp
         value_template: >-
           {% if value_json.vehicleName == '3008' and value_json.charging and value_json.chargeRemainingDuration > 0 %}{{ (now() + timedelta(seconds=value_json.chargeRemainingDuration)).isoformat() }}{% else %}{{ none }}{% endif %}
-  # power flows for the Overview (W; grid < 0 is export, battery < 0 is charging)
-  - resource: "http://192.168.68.53:7070/api/state?jq={home:.homePower,grid:.grid.power,battery:.battery.power,battery_soc:.battery.soc,charge:.loadpoints[0].chargePower}"
-    scan_interval: 30
+  # power flows for the Overview (W; grid < 0 is export, battery < 0 is charging), plus what the house
+  # battery automation and the Energy price need. Polled every 10 s (evcc's minimum interval): evcc changes
+  # the values once per its own interval, which paces house_battery_discharge_limit.
+  - resource: "http://192.168.68.53:7070/api/state?jq={home:.homePower,grid:.grid.power,battery:.battery.power,battery_soc:.battery.soc,charge:.loadpoints[0].chargePower,charging:.loadpoints[0].charging,price:.tariffGrid,interval:.interval,residual:.residualPower,pv:.pvPower}"
+    scan_interval: 10
     sensor:
+      - name: evcc PV power
+        unique_id: evcc_pv_power
+        value_template: "{{ value_json.pv | float(0) }}"
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
       - name: evcc home power
         unique_id: evcc_home_power
         value_template: "{{ value_json.home }}"
@@ -286,7 +285,61 @@ rest:
         state_class: measurement
       # evcc grid power (.grid), evcc battery power (.battery), evcc charge power (.charge): the same, W;
       # evcc battery soc (.battery_soc): unit %, device_class battery
+      # evcc interval (.interval, s), evcc residual power (.residual, W), evcc grid price (.price, EUR/kWh)
+    binary_sensor:
+      - name: evcc charging
+        unique_id: evcc_charging
+        value_template: "{{ value_json.charging }}"
+  # lifetime meters for the Energy dashboard (kWh, evcc's counters from the EMMA and the wallbox).
+  # availability: a 0 or missing value while evcc restarts would count as a meter reset
+  - resource: "http://192.168.68.53:7070/api/state?jq={grid_import:.grid.energy,grid_export:.grid.returnEnergy,pv:.pvEnergy,charge:.loadpoints[0].chargeTotalImport}"
+    scan_interval: 60
+    sensor:
+      - name: evcc grid import energy
+        unique_id: evcc_grid_import_energy
+        value_template: "{{ value_json.grid_import }}"
+        availability: "{{ value_json.grid_import | float(0) > 0 }}"
+        unit_of_measurement: kWh
+        device_class: energy
+        state_class: total_increasing
+      # evcc grid export energy (.grid_export), evcc pv energy (.pv), evcc charge energy (.charge): the same
+
+# the house battery has no lifetime counter in evcc: split its power (W, < 0 charging) and integrate each side
+template:
+  - sensor:
+      - name: evcc battery charge power
+        unique_id: evcc_battery_charge_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ [0 - states('sensor.evcc_battery_power') | float(0), 0] | max }}"
+        availability: "{{ has_value('sensor.evcc_battery_power') }}"
+      # evcc battery discharge power: the same with states(...) | float(0) instead of 0 - ...
+      # grid price (EUR/kWh, incl. VAT): evcc's current tariff (rest sensor evcc_grid_price, .tariffGrid),
+      # so evcc.yaml's tariffs are the single place to change it
+      - name: electricity price
+        unique_id: electricity_price
+        unit_of_measurement: EUR/kWh
+        state: "{{ states('sensor.evcc_grid_price') }}"
+        availability: "{{ has_value('sensor.evcc_grid_price') }}"
+
+sensor energy:   # a second sensor: key; the integration platform needs an HA restart, not a reload
+  - platform: integration
+    name: evcc battery charge energy
+    unique_id: evcc_battery_charge_energy
+    source: sensor.evcc_battery_charge_power
+    unit_prefix: k
+    round: 3
+    method: left
+  # evcc battery discharge energy: the same from sensor.evcc_battery_discharge_power
 ```
+
+The Energy dashboard (`/energy`, saved with the websocket API `energy/save_prefs`): grid "Rede" with import
+`sensor.evcc_grid_import_energy`, export `sensor.evcc_grid_export_energy`, price `sensor.electricity_price` and
+power `sensor.evcc_grid_power`; solar `sensor.evcc_pv_energy` (power `sensor.evcc_pv_power`); battery discharge /
+charge `sensor.evcc_battery_discharge_energy` / `_charge_energy` (power `sensor.evcc_battery_power`, SoC
+`sensor.evcc_battery_soc`, 5 kWh); device "Wallbox" `sensor.evcc_charge_energy` (power `sensor.evcc_charge_power`).
+No export price: the selling tariff is not known.
 
 `ha-dashboard-home.yaml` is the "Casa" dashboard (url `dashboard-home`), HA's default panel in place of the
 generated "Visão geral": energy now (those sensors and a 12 h graph), both cars (battery, range, charging, charge end)
@@ -339,7 +392,7 @@ path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not 
   | 5252 | Tailscale web client (off now) | `tailscale debug prefs`: `RunWebClient false` |
   | 5900 | VNC/SPICE of the `haos` VM when libvirt gives it a display (first autoport) | libvirt default; `haos.xml` needs sudo |
   | 6379 | Redis (dogchef, in the container) | well-known; `docker-proxy` in LXD dev |
-  | 6768 | Orca runtime (`0.0.0.0`) | `ss -ltnp`: `orca-ide` |
+  | 6768 | Orca runtime (`0.0.0.0`) | `ss -ltnp`: `node` (`orcad-server.js` under `~/.local/opt/orca/current`) |
   | 7070 | evcc's default UI port | well-known (evcc runs in the HA VM / on the Pi) |
   | 8080 | Pi-hole web admin (`127.0.0.1`) | `curl`: `302 /admin/login`; `PIHOLE_WEB_PORT_HTTP` |
   | 8123 | Home Assistant's well-known port; in the `haos` VM it serves on port 80 | probe 2026-10-23: 192.168.68.53 port 80 open, 8123 closed |
@@ -358,14 +411,41 @@ path ([below](#dogchef-dev-stack-in-lxd): they live in the container `dev`, not 
 
 ### Orca
 
-- Download the `orca-ide` amd64 `.deb` from the project's releases (github.com/stablyai/orca) and run
-  `./install-orca.sh orca.deb`: it installs the package (running the extracted app fails, its
-  `chrome-sandbox` is not setuid) and the user unit for the current user, with linger on so it runs
-  without a login. Tested with 1.4.224.
-- **Pairing URL** is a secret; read it on the box and never commit it:
-  `journalctl --user -u orca -o cat | grep "Pairing URL"`.
-- **Measured: orcad is broken** in orca-ide 1.4.224 (missing module), so `serve` falls back
-  to Electron, which works headless. It binds `0.0.0.0` and has no bind option.
+- `./install-orca.sh` installs the server-only tarball (`orca-server-linux-x64.tar.gz`, no Electron, no sandbox
+  flag) under `~/.local/opt/orca/<version>/` with a `current` symlink, renders `orca.service`
+  (`serve --supervise`, `KillMode=process`, `TimeoutStopSec=90`), `orca-update.service` and `orca-update.timer`
+  into `~/.config/systemd/user`, turns linger on and starts the unit and the timer. Run it again any time: it
+  re-renders and enables, and does not restart a running `orca.service`. The data stays in `~/.config/orca`
+  (the runtime's default, the same as the old `.deb`), so pairings are kept in principle; not yet confirmed on a
+  client.
+- **Updates** (`orca-update.timer`, daily about 04:30, `Persistent=true`, so a missed run happens at boot):
+  `orca-update.sh` takes the newest stable release that has the server asset and is at least
+  `ORCA_UPDATE_DELAY_DAYS` (3) days old, so a quick hotfix replaces a bad build before the box sees it. It checks the
+  sha256 against the release's `orca-server-sha256sums.txt` (same release, so it catches a bad download, not a
+  compromised release), extracts to `<version>.tmp`, requires `bin/orca-ide --version` to print the version,
+  flips `current` atomically and restarts `orca.service`, then waits (120 s) for the unit to be active and
+  `ORCA_PORT` to answer. If it does not, it flips back to `previous` and restarts, and that build is never tried
+  again (`bad-versions`). It refuses the rollback when a live terminal daemon speaks a protocol the old build
+  cannot attach (that would strand its terminals): the new build stays and the run exits non-zero. Pruning keeps
+  `current`, `previous` and any version dir a running process executes from (the terminal daemon keeps running from
+  the dir it started in; with no terminal open it exits by itself within seconds).
+  - Check: `systemctl --user list-timers orca-update.timer`, `journalctl --user -u orca-update`, `readlink
+    ~/.local/opt/orca/current`. Run now: `systemctl --user start orca-update.service`.
+  - Restarting the unit is what activates a new build: the supervisor resolves `current` once at start and keeps
+    respawning its server from that directory (measured: flipping the link and killing the server child brought
+    it back on the old build). Terminals survive the restart (`KillMode=process`; the daemon runs in its own
+    `orca-daemon-*` scope); a restart takes about 2 s.
+  - Test: `node --test nucbox/tests/orca-update.test.mjs` (fake releases and a stub `systemctl`, no network, never the
+    live service).
+- Moving from the old `.deb`: the tarball unit replaces the deb's `orca.service` in place (same name). Keep the
+  deb installed until the Mac is confirmed paired, then `sudo apt remove orca-ide`.
+- **Pairing** codes are secrets: create them in a terminal on the box, never paste or commit them. The supervised
+  server does not print a Pairing URL. Pair through Caddy, since LAN and tailnet get no answer on `ORCA_PORT` (below):
+  `orca pair --mobile --address wss://$ORCA_HOST` (phone) or `orca pair --address wss://$ORCA_HOST` (another Orca,
+  Settings → Remote Orca Servers → Add Server). `--rotate` replaces an unused offer. Measured 2026-11-15 (endpoint
+  decoded from the code): without `--address` it is `ws://nucbox.<domain>:6768` and the phone never connected; with
+  `--address wss://$ORCA_HOST` it is `wss://$ORCA_HOST` and it did.
+- The runtime is orcad (`[serve] running on orcad ...`), and it binds `0.0.0.0` unless `--bind` is given.
 - **Measured: tailscale comes before ufw.** Its `ts-input` chain is jumped first in `INPUT`
   and accepts everything on `tailscale0`, so `ufw deny in on tailscale0` does nothing (the port
   still answered over the tailnet). `orca-tailnet-block.sh` drops the port in the raw table from
@@ -522,6 +602,7 @@ From the audit of `ufw status numbered`, 2026-10-23; default input and forward D
 | Caddy ports from the LAN | the box's Caddy (Everon, previews) |
 | 3000 from 192.168.68.53 | one LAN client (the Mac) to the host's stellantis-worker |
 | 53 from the LAN | Pi-hole |
+| 53 from 172.16.0.0/12 | Docker containers reach Pi-hole: they inherit the host's resolver (192.168.68.50, the host itself), and without it `docker build` fails with "Temporary failure in name resolution". Added 2026-11-12: `sudo ufw allow from 172.16.0.0/12 to any port 53 comment 'Docker -> Pi-hole DNS'` |
 | `tailscale0` in (v4 and v6) | tailnet clients reach the host |
 | `tailscale0` forward to `br0` (v4 and v6) | the subnet router: tailnet to the LAN and `dev` |
 | 8887 forward to 192.168.68.53 | DNAT target of the port-8887 forward |
@@ -618,9 +699,10 @@ sudo pihole-FTL --config misc.dnsmasq_lines   # then set the list again without 
 
 ### Orca clients
 
-Every client pairs with the box itself, using the same pairing URL from the journal: on a computer
-(Mac, Windows) Settings → Remote Orca Servers → Add Server; on the iPhone the Orca app takes the
-same URL (measured: no `--mobile-pairing` on the unit needed). All of them reach `wss://ORCA_HOST`,
+Every client pairs with the box itself, with a code from `orca pair` on the box (see Orca): on a computer
+(Mac, Windows) `orca pair --address wss://$ORCA_HOST`, then Settings → Remote Orca Servers → Add Server; on the
+iPhone `orca pair --mobile --address wss://$ORCA_HOST`, scanned in the Orca app (measured 2026-11-15: before
+pairing this way the phone saw the box's terminals but not its chats; after it, both). All of them reach `wss://ORCA_HOST`,
 which only Pi-hole resolves, so away from home the client needs the tailnet with Pi-hole as its DNS.
 
 ### On the Mac: WARP
@@ -664,6 +746,107 @@ rather than the house.
 > The EMMA accepts a **single Modbus TCP client** at a time. A second one is
 > reset with `connection reset by peer` while the first keeps working — pointing
 > Home Assistant at port 502 as well means one of them loses, intermittently.
+
+**Keep the house battery out of the car.** The inverter sees the wallbox as one
+more house load, so while the car charged, the LUNA battery discharged into it
+(2.4 kW of a 4.4 kW charge). evcc's own answer, `batteryDischargeControl`, only
+knows "free" or "hold" (max discharge 0 W): the house then ran on the grid too.
+And after an evcc restart, evcc forgot it had set hold, so the battery stayed
+stuck at 0 W. So evcc only reads the battery (`huawei-emma`, the EMMA's unit 0),
+and Home Assistant sets the inverter's max discharge power (register 47077):
+
+- While the car charges (`binary_sensor.evcc_charging`, evcc's own flag), the
+  limit is what the house still needs after the solar: the house's consumption
+  (`sensor.evcc_home_power`) minus the PV power (`sensor.evcc_pv_power`), never
+  below 0. With enough solar for the house the limit is 0 W and the battery is
+  not used at all; with less, the battery covers only the shortfall. The grid
+  covers the car. An unreadable PV counts as 0 W (the limit is then the house's
+  consumption). Otherwise the limit is the inverter's rated max (2500 W,
+  register 37048). The PV value comes from the same 10 s evcc request as home
+  power, so both are one evcc snapshot.
+- The automation `house_battery_discharge_limit` runs
+  `shell_command.inverter_discharge_limit` on every evcc cycle (each new
+  `sensor.evcc_home_power`, so it follows evcc's update interval; the REST
+  sensors poll evcc every 10 s), when charging starts or stops, and every 5
+  min. That command is
+  [`nucbox/ha-inverter-discharge-limit.py`](nucbox/ha-inverter-discharge-limit.py),
+  copied to `/homeassistant/scripts/inverter_discharge_limit.py`. The 5 min run
+  also undoes any other writer.
+- The EMMA accepts a single Modbus client (evcc). The script goes through
+  evcc's `modbusproxy` (port 5020, `readonly: false`, `timeout: 10s`: inverter
+  writes through the EMMA take seconds).
+- The EMMA assigns the inverter's unit id itself (5 today; 0 is the EMMA, 2 the
+  SmartGuard), and FusionSolar cannot pin it. The script finds the inverter by
+  serial number (register 30015). The serial is the shell_command's argument
+  on HA, not in this repo. The script caches the id.
+- The register may live in flash. The script writes only when the value is off
+  by more than evcc's residual power (150 W, UI "Comportamento de controlo",
+  `sensor.evcc_residual_power`), writes 0 and the rated max exactly, and reads the value
+  back.
+- Each confirmed run stamps `input_datetime.inverter_limit_last_ok`. After 10
+  min without one, the iPhone gets one notification. While evcc's readings are
+  unavailable, the last value stays.
+- During a Huawei firmware update the inverter answers reads but rejects
+  writes with exception 4. Wait for the update to finish.
+
+**Keep the house battery for outages only.** `input_boolean.battery_backup_only`
+("Bateria só para backup" on the Casa dashboard; yaml helper in
+`configuration.yaml`) sets the inverter's backup power SOC (register 47102, in
+0.1 %): on is 100 %, off is 30 %. At 100 % the battery never discharges while
+the grid is up and the EMMA tops it up from the grid (measured: ~1 kW of grid
+charge, gone 30 s after writing 0). Off is 30 % and not 0 % so a grid outage
+always finds some charge: 30 % down to the 10 % discharge cutoff is ~0.9 kWh,
+about 3 h of the house's night base load (median ~290 W; the climate load is
+shed after 10 min of outage, see below), and it costs ~0.05 EUR a day (up to
+~0.25 EUR on a day the battery would otherwise be emptied to the cutoff). Raising
+the value above the current SOC makes the EMMA charge from the grid up to it
+right away, at whatever price is current. The EMMA's own reading (unit 0, register
+30373, read-only) follows the inverter's. The automation
+`house_battery_backup_only` runs `shell_command.inverter_backup_soc` (the same
+script, `<serial> backup <percent>`) on each change, at HA start and every
+5 min, so a value set in FusionSolar is overwritten; the script writes only
+when the register differs. A failed write is retried on the next run, without
+a notification.
+
+**Shed the climate load in a long outage.** The automation `grid_outage_load_shedding`
+([`nucbox/ha-grid-outage.yaml`](nucbox/ha-grid-outage.yaml)) waits until the grid has
+been down for `input_number.grid_outage_shed_delay` minutes (default 10: rides
+out the blips) and the battery is supplying the house (`sensor.evcc_battery_power`
+above 100 W). Then it turns off the five ACs and the heat pump and pauses the two
+automations that drive them, `ac_solar_fresh_air` and `ac_coil_dry` (the coil-dry
+one first, or the ACs going off would start its 30 min fan run); the iPhone is told.
+When the grid is back it turns on again only the automations it paused (recorded in
+`input_text.grid_outage_disabled`), leaves the ACs and the heat pump off, and tells
+the iPhone. Two helpers live only in `.storage` (not in the repo's yaml), created
+through the websocket API: `input_number.grid_outage_shed_delay` (`input_number/create`,
+1 to 120 min, step 1, box, no `initial`) and `input_text.grid_outage_disabled`
+(`input_text/create`, max 255; empty means not shedding). The delay was set to 10
+once; with no `initial` a value changed in the UI survives an HA restart (`initial`
+would reset it to 10 every time). The automation re-reads the delay each time the
+trigger arms, so a change applies from the next outage. Recreate both with the same
+calls if they are ever lost. The signal is `binary_sensor.grid_outage`, a `command_line`
+sensor in `configuration.yaml` that runs the script with `--grid` every minute: the
+grid voltage of the EMMA's built-in energy sensor (unit 0, register 31639, 0.01 V,
+220 V with the grid up) below 100 V is an outage. A failed read leaves the sensor
+unknown and never sheds. Untested: what the register reads in a real outage (it
+assumes the sensor sits on the grid side of the SmartGuard) and the whole shed path
+on the real house; it needs the HA host, the router and the NucBox on the backed-up
+side of the SmartGuard.
+
+```yaml
+command_line:
+  - binary_sensor:
+      name: Grid outage
+      unique_id: grid_outage
+      command: python3 /config/scripts/inverter_discharge_limit.py --grid
+      scan_interval: 60
+      command_timeout: 40
+      payload_on: outage
+      payload_off: up
+```
+
+Leave the EMMA's AI energy optimisation in FusionSolar off, so HA is the only
+system scheduling the battery.
 
 ## evcc-watch
 

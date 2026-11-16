@@ -1,0 +1,23 @@
+# AIOStreams for Stremio (tv/README.md): one addon that asks Comet, MediaFusion, Torrentio and the rest
+# through TorBox and hands the TV a short, filtered list. Video goes TorBox -> TV, never through here.
+# Secrets outside the repo: ~/.aiostreams/env with SECRET_KEY=<openssl rand -hex 32> (never change it,
+# it encrypts the stored configs) and BASE_URL=https://aiostreams.CADDY_DOMAIN.
+# Rootless podman quadlet: ln -s "$PWD/aiostreams.container" ~/.config/containers/systemd/ && systemctl --user daemon-reload && systemctl --user start aiostreams
+# Loopback only; ./caddy-aiostreams.sh puts https://aiostreams.CADDY_DOMAIN (LAN + tailnet) in front.
+# Capped so it never crowds the box: 768 MB, one core, low CPU/IO priority.
+# Pinned (no AutoUpdate): it releases nightly and the TV depends on it. Upgrade by hand: change the tag,
+# restart, re-run the checks in tv/README.md; roll back by restoring the tag.
+[Container]
+Image=ghcr.io/viren070/aiostreams:v2.37.0
+PublishPort=127.0.0.1:11471:3000
+EnvironmentFile=%h/.aiostreams/env
+Volume=%h/.aiostreams/data:/app/data
+PodmanArgs=--memory=768m --memory-swap=768m --cpus=1 --pids-limit=256
+
+[Service]
+Restart=always
+CPUWeight=20
+IOWeight=20
+
+[Install]
+WantedBy=default.target

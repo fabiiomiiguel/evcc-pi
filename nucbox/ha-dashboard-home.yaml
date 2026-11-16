@@ -41,6 +41,35 @@ views:
             entity: sensor.evcc_charge_power
             name: Wallbox
             icon: mdi:ev-station
+          - type: tile
+            entity: input_boolean.battery_backup_only
+            name: Bateria só para backup
+            grid_options:
+              columns: full
+          # live power flow (W). Third-party card flixlix/power-flow-card-plus v0.3.7, installed without HACS:
+          # its release power-flow-card-plus.js in /homeassistant/www/, dashboard resource (module)
+          # /local/power-flow-card-plus.js?v=0.3.7 (websocket lovelace/resources/create)
+          - type: custom:power-flow-card-plus
+            title: Agora
+            grid_options:
+              columns: full
+            entities:
+              grid:
+                entity: sensor.evcc_grid_power
+              solar:
+                entity: sensor.evcc_pv_power
+              battery:
+                entity:
+                  consumption: sensor.evcc_battery_discharge_power
+                  production: sensor.evcc_battery_charge_power
+                state_of_charge: sensor.evcc_battery_soc
+              home:
+                entity: sensor.evcc_home_power
+                override_state: true
+              individual:
+                - entity: sensor.evcc_charge_power
+                  name: Wallbox
+                  icon: mdi:ev-station
           - type: history-graph
             hours_to_show: 12
             grid_options:

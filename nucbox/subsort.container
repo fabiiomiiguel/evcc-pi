@@ -1,0 +1,23 @@
+# subsort.py between AIOStreams and OpenSubtitles V3+ (tv/README.md): puts the subtitle that matches the
+# playing file first and gives pt-BR a code Stremio shows. Always on, idle until Stremio asks for subtitles.
+# Shares aiostreams' network, so AIOStreams reaches it at http://127.0.0.1:11472 (the V3+ preset's URL);
+# nothing else can. ln -s "$PWD/subsort.container" ~/.config/containers/systemd/ && systemctl --user daemon-reload && systemctl --user start subsort
+[Unit]
+Requires=aiostreams.service
+After=aiostreams.service
+PartOf=aiostreams.service
+
+[Container]
+Image=docker.io/library/python:3.12-alpine
+AutoUpdate=registry
+Network=aiostreams.container
+Volume=%h/Projects/personal/evcc-pi/nucbox/subsort.py:/subsort.py:ro,Z
+Exec=python3 -u /subsort.py 11472
+PodmanArgs=--init --memory=64m --memory-swap=64m --cpus=0.5 --pids-limit=64
+
+[Service]
+Restart=always
+CPUWeight=20
+
+[Install]
+WantedBy=default.target

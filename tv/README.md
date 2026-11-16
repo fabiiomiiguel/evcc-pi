@@ -46,10 +46,57 @@ back with `pm move-package <pkg> internal` and `pm move-primary-storage internal
 on 2026-10-28; the stick holds nothing now.
 
 Stremio streams through the NucBox (`nucbox/stremio-server.container`, cache
-10 GB there): Stremio → Settings → Server → URL `http://192.168.68.50:11470/`. Stremio → Settings → Playback → **Experimental ASS subtitles support** off: anime ASS subtitles (libass) run the 32-bit app out of memory and it crashes; off, they show as plain text. iPad (needs HTTPS): `https://stremio.casa.byfc.pt/` (`nucbox/caddy-stremio.sh`). Embedded subtitles fail when the server transcodes for the iPad: Settings → Player → VLC plays the MKV directly.
+10 GB there): Stremio → Settings → Server → URL `http://192.168.68.50:11470/`. Stremio → Settings → Playback → **Experimental ASS subtitles support** off: anime ASS subtitles (libass) run the 32-bit app out of memory and it crashes; off, they show as plain text. iPad (needs HTTPS): `https://stremio.casa.byfc.pt/` (`nucbox/caddy-stremio.sh`). Use Stremio's own player there (not VLC: an external player gets the video only, never the addon's Portuguese subtitles); the server transcodes what the iPad can't play. Embedded subtitles fail when it transcodes, the addon's work. AIOStreams' links reach the server through `AddHost` in `stremio-server.container` (without it: "Probe process exited with code: 1"). Startup on the iPad is the probe plus the first transcoded segment (S04E05: BluRay HEVC 10-bit + Opus 9 s, WEB 720p 4-6 s): pick a WEB/MP4 file there, or use Infuse (Settings → Player → external): it plays the MKV directly, starts in 1-2 s and fetches Portuguese subtitles from OpenSubtitles itself (an external player never gets the addon's). The TV plays the BluRay directly. GPU (VAAPI) was tried: the official image's Mesa 18 can't drive the 780M, and on trixie's Mesa it was slower (1.5 s vs 0.6 s per segment) with 10x larger segments.
 Back to `http://127.0.0.1:11470/` when the NucBox is off. The TV's own server
 keeps "no caching" (`cacheSize` 0; its torrent cache would fill the TV)
 and "Run in background" is off, so it does not start (~116 MB RAM).
+
+Streams come from one addon, AIOStreams on the NucBox (`nucbox/aiostreams.container`,
+`https://aiostreams.casa.byfc.pt`, `nucbox/caddy-aiostreams.sh`), in place of Torrentio, TorrentsDB
+and Brazuca. Stremio on the TV crashed with `rust_oom` (2026-11-02 to 11-05): the 32-bit app sits near
+its ~3 GB address space, and each addon's long stream list pushed it over. AIOStreams asks Torrentio,
+Comet, MediaFusion, StremThru Torz and, for anime, SeaDex through TorBox (TorrentsDB dropped 2026-11-06: 0-1 of
+~100 streams per title after dedup) and returns at most 6 cached streams:
+1080p/720p (the panel is 1920×1080; 576p/480p and unknown resolution or quality only when no cached 720p/1080p
+exists, an `excludedStreamExpressions` rule, for old shows; unknown quality stays when the file has Portuguese subtitles, as fansub names like Erai-raws carry no WEB/BluRay tag), no 4K, REMUX, Dolby Vision (the panel has HDR10/HDR10+/HLG),
+3D, AI upscales or cam, films up to 15 GB, episodes up to 5 GB, original audio then English then Portuguese.
+Anime sorts files with Portuguese subtitles inside (`preferredSubtitles`, from the name or a probe) right after cached, then SeaDex (the community's best release, usually BD with Japanese audio): AoT S04 gets Erai-raws (H.264 + AAC, pt-BR inside) first, which Infuse and the iPad play with Portuguese at once.
+Season/episode, title, episode-title and year matching drop files of another episode (One Piece S01E01 got
+SeaDex's S08E01 and 0229 before; `excludedKeywords` also drop the "One Piece Log: Fish-Man Island Saga" recap).
+`excludedLanguages` lists every language but English, Japanese, Portuguese (PT/BR), multi/dual and Unknown: a file
+goes only when all its languages are listed, and one in the title's original language counts as "Original", so
+Amélie in French or Parasite in Korean stay. RemuxDB is off (`remuxDb.enabled: false`: only 2 s timeouts).
+Only files already cached on TorBox show while any is (`excludedStreamExpressions`
+`count(cached(streams)) > 0 ? uncached(streams) : false`, `excludeUncached` off), so a title always has an option:
+with none cached the list shows TorBox downloads ("TB" without "Instant"), which play once TorBox has fetched
+them, minutes later. A show with no cached 1080p (Get Organized with The Home Edit S02 had a lone 720p) gets one
+by adding the season pack once in TorBox; it is then cached for good. `TMDB_ACCESS_TOKEN` in `~/.aiostreams/env` (free, themoviedb.org → Settings → API)
+gives films their original language; without it "original audio first" applies only to series.
+Subtitles: the file's own first (always in sync; streams sort cached, language, subtitle, then resolution,
+so one with embedded Portuguese wins over a sharper one without), OpenSubtitles V3+ in pt-PT and pt-BR
+as the fallback (20 s timeout, that server is slow; matched to the title, not the release, so it can lag).
+No hash match exists for most debrid files and V3+ keeps a fixed order, so its preset URL is
+`http://127.0.0.1:11472`: `nucbox/subsort.py` (`subsort.container`, in aiostreams' network) puts the one
+named most like the playing file first (group, WEB/BluRay, "Official" for WEB) and turns V3+'s
+"Portuguese (BR)", a blank language in Stremio, into `pob`. When Stremio sends the file's hash and the
+official OpenSubtitles has any subtitle for that exact file (any language), that one's timing is the
+reference and the Portuguese ones are ordered by drift from it (Severance S01E01: ION10 0.00 s first,
+a BluRay one 0.85 s last). Each pick is in `journalctl --user -u subsort`. Check: `python3 nucbox/subsort.py --test`.
+Torrentio leaves out Rutor/Rutracker and the dub trackers (Comando, BluDV, Mico-Leão, Torrent9): their
+files play a dub (Russian, Portuguese) by default. Inside a multi-audio file the player picks the track:
+Stremio → Settings → Player → Audio Track Japanese, Secondary Audio Track English (it has only two slots).
+Its configure page holds the TorBox key; the config's UUID and password are kept outside the repo.
+Backup (outside the repo, mode 600): `~/backups/aiostreams/` holds `env` (the `SECRET_KEY` that decrypts
+the config) and `db-<date>.sqlite`, taken while running with Python's `sqlite3` backup
+(`src.backup(dst)`), every night by `nucbox/aiostreams-backup.timer` (`aiostreams-backup.py`, keeps the latest;
+run `systemctl --user start aiostreams-backup` after changing the config). The image is pinned to a release
+(`aiostreams.container`, no AutoUpdate): upgrade by changing the tag. Restore: stop `aiostreams`, copy `env` to
+`~/.aiostreams/env` and the db to `~/.aiostreams/data/db.sqlite` (delete `db.sqlite-wal`/`-shm`), start it.
+The ElfHosted copy of the config was deleted on 2026-11-05.
+`*.casa.byfc.pt` resolves only on the home DNS: installing it from a device on Cloudflare WARP / 1.1.1.1
+(or iCloud Private Relay) fails with "Failed to fetch: Load failed". On a Mac, WARP can stay on with
+`echo "nameserver 192.168.68.50" | sudo tee /etc/resolver/casa.byfc.pt` (check: `scutil --dns | grep -A3 casa.byfc.pt`;
+at home only); elsewhere turn it off or use Tailscale.
 
 What follows is kept for a TV that does keep USB powered.
 

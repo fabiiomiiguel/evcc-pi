@@ -1,0 +1,9 @@
+[Unit]
+Description=Update the Orca server tarball (orca-update.sh)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@NUCBOX_DIR@/orca-update.sh
+# download, then restart orca.service (stop up to 90 s) and the health check (up to 120 s)
+TimeoutStartSec=15min

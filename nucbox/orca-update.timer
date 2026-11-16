@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily check for a new Orca server release
+
+[Timer]
+OnCalendar=*-*-* 04:30
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
